@@ -64,11 +64,11 @@
 | 角色代碼 | 名稱 | BPM 對應條件 | 說明 |
 |---------|------|------------|------|
 | `GUEST` | 訪客 | 未登入 | 僅可瀏覽公開文件 |
-| `MEMBER` | 一般同仁 | 登入後，級職 < 主管門檻 | 可瀏覽部門文件、建立文章/附件、留言 |
-| `MANAGER` | 部門主管／經理 | 登入後，`主管工號` 有值 或 級職 ≥ 主管門檻（待定義） | MEMBER 基礎上，可編輯本部門他人文章 |
+| `MEMBER` | 一般同仁 | 登入後，級職 ≥ 6 | 可瀏覽部門文件、建立文章/附件、留言 |
+| `MANAGER` | 部門主管／經理 | 登入後，`主管工號` 有值 或 級職 < 6 | MEMBER 基礎上，可編輯本部門他人文章 |
 | `ADMIN` | 系統管理員 | 手動於後台指定 | 全權管理 |
 
-> **主管判斷邏輯**：若 BPM 回傳資料中，此人的 `員工工號` 等於某人的 `主管工號`，則視為主管；或由 ADMIN 手動升級。
+> **主管判斷邏輯**：若 BPM 回傳資料中，此人的 `員工工號` 等於某人的 `主管工號`，或 `級職` 數字小於 6，則視為主管；亦可由 ADMIN 手動升級。
 
 ---
 
@@ -112,7 +112,7 @@
 - 系統需能呼叫 BPM API 取得同部門同仁列表，用於：
   - 文章編輯權限指派
   - 留言 @提及下拉選單
-- API 格式待 BPM 負責人確認；前端呼叫後快取至 Redis（TTL：1 小時）
+- API 格式於開發時由 BPM 負責人提供；前端呼叫後快取至 Redis（TTL：1 小時）
 
 ---
 
@@ -325,7 +325,7 @@ GigaSolar Knowledge Base
 
 ## 6 AI 功能需求
 
-> 使用本地端 **Ollama**，預設模型：`qwen3:6b`（可於管理員設定調整）
+> 使用本地端 **Ollama**，預設模型：`qwen3.6:35b`（可於管理員設定調整）
 
 ### 6.1 AI 問答模式（首頁 AI 模式）
 - 右側彈出視窗輸入自然語言問題
@@ -343,7 +343,7 @@ GigaSolar Knowledge Base
 - 回傳校正後 Markdown，詢問是否套用
 
 ### 6.4 Embedding 與 RAG
-- 每次文章儲存後，非同步對全文產生 Embedding，存於 DB 向量欄位
+- 每次文章儲存後，非同步對全文產生 Embedding，存於 SQL Server JSON 欄位中
 - AI 問答時進行語意相似度 Top-K 召回，作為 Prompt 上下文
 
 ---
@@ -369,6 +369,8 @@ GigaSolar Knowledge Base
 | 事件 | 通知對象 |
 |------|---------|
 | 留言中 @提及某人 | 被提及者 |
+
+> **註**：文章被編輯時暫時不做通知，未來若有需要，編輯後儲存在通知部門即可。
 
 ### 8.2 通知流程
 1. 使用者在留言中輸入 `@{姓名}` 並送出
@@ -442,6 +444,7 @@ GigaSolar Knowledge Base
 - 目錄結構：`/uploads/{組織OID}/{部門代碼}/{年月}/{檔案UUID}.{副檔名}`
 - 靜態檔案由 Express 的 `express.static` 提供服務，路徑加入 JWT 驗證 middleware
 - Docker Volume 名稱：`kb_uploads`
+- 備份策略：由維運自行設定
 
 ### 10.5 可用性
 - Vue Router 懶加載，首頁包大小 < 200KB gzip
@@ -470,7 +473,7 @@ GigaSolar Knowledge Base
 | 資料庫 | Microsoft SQL Server | 主資料庫 |
 | 快取 | Redis | Session 快取、BPM 同仁列表快取（TTL 1hr）、WebSocket Pub/Sub |
 | 即時通訊 | ws (Node.js WebSocket) | 編輯感知 room 管理 |
-| AI 推理 | Ollama（本地端） | 預設模型：qwen3:6b |
+| AI 推理 | Ollama（本地端） | 架在 Node.js 轉發給 AI 主機；預設模型：qwen3.6:35b |
 | AI Streaming | Server-Sent Events (SSE) | 前端逐字呈現 |
 | 檔案儲存 | Docker Volume (`kb_uploads`) | 掛載於 `/app/uploads` |
 | 身份驗證 | 現有 BPM 登入 API + JWT | Token 存 sessionStorage（per Tab） |
@@ -500,9 +503,9 @@ GigaSolar Knowledge Base
 |---|------|--------|------|
 | 1 | Markdown 編輯器確認使用 **vditor**（支援圖片上傳 hook） | 前端 | ✅ 建議定案 |
 | 2 | 附件儲存確認使用 **Docker Volume** | 後端/維運 | ✅ 已定案 |
-| 3 | Embedding 向量儲存方案（SQL Server JSON 欄位 vs 獨立向量 DB） | 後端 | 🔲 待確認 |
-| 4 | BPM **同仁列表 API** 規格（端點、認證方式、回傳欄位） | IT/BPM 負責人 | 🔲 待確認 |
-| 5 | **主管判斷門檻**：級職幾以上算主管？或純用「主管工號對應」即可？ | PM / HR | 🔲 待確認 |
-| 6 | Docker Volume **備份策略**（定期快照 or NAS 掛載） | 維運 | 🔲 待確認 |
-| 7 | Ollama 硬體規格確認（GPU / RAM）影響 AI 回應速度 SLA | 維運 | 🔲 待確認 |
-| 8 | 通知除 @提及外，是否需要「文章被編輯」通知給原作者？ | PM | 🔲 待確認 |
+| 3 | Embedding 向量儲存方案確認使用 **SQL Server JSON 欄位** | 後端 | ✅ 已定案 |
+| 4 | BPM **同仁列表 API** 規格：開發時提供 API | IT/BPM 負責人 | ✅ 已定案 |
+| 5 | **主管判斷門檻**：會使用級職判斷主管（數字小於 6 為主管） | PM / HR | ✅ 已定案 |
+| 6 | Docker Volume **備份策略**：自行設定 | 維運 | ✅ 已定案 |
+| 7 | Ollama 架構：會架在 Node.js 轉發給 AI 主機 | 維運 | ✅ 已定案 |
+| 8 | 通知除 @提及外：暫時不做通知，未來有需要的話編輯後儲存在通知部門即可 | PM | ✅ 已定案 |
