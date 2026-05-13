@@ -16,13 +16,31 @@
               <el-empty description="目前沒有留言" :image-size="60" />
             </div>
             <div v-else class="comment-list">
-              <div v-for="c in comments" :key="c.id" class="comment-item">
+              <div v-for="(c, idx) in comments" :key="c.id" class="comment-item">
                 <div class="comment-header">
                   <el-avatar :size="28" class="comment-avatar">{{ c.author.員工姓名.charAt(0) }}</el-avatar>
                   <span class="comment-author">{{ c.author.員工姓名 }}</span>
                   <span class="comment-time">{{ timeAgo(c.createdAt) }}</span>
                 </div>
-                <div class="comment-body" v-html="renderComment(c.content)" />
+                <div class="comment-body-row">
+                  <div class="comment-body" v-html="renderComment(c.content)" />
+
+                  <!-- ✅ 只有「有被 @tag 到自己」的留言才顯示已讀按鈕 -->
+                  <template v-if="isMentionedMe(c)">
+                    <el-button
+                      v-if="!isReadByMe(c)"
+                      size="small" type="primary" plain
+                      class="read-check-btn"
+                      :loading="readingId === c.id"
+                      @click="markAsRead(idx, c.id)"
+                    >
+                      已查看
+                    </el-button>
+                    <span v-else class="read-done-tag">
+                      <el-icon><CircleCheck /></el-icon> 已讀
+                    </span>
+                  </template>
+                </div>
               </div>
             </div>
           </div>
@@ -71,10 +89,15 @@
 
 <script setup>
 import { ref, watch, nextTick } from 'vue'
+import { useAuthStore } from '@/store/auth.js'
+import { useNotificationStore } from '@/store/notification.js'
 import { commentService, colleagueService } from '@/services/api.js'
 import { useDirectoryStore } from '@/store/directory.js'
 import { timeAgo } from '@/utils/dateFormat.js'
 import { ElMessage } from 'element-plus'
+
+const auth = useAuthStore()
+const notifStore = useNotificationStore()
 
 const props = defineProps({
   modelValue: Boolean,
@@ -87,14 +110,33 @@ const dirStore = useDirectoryStore()
 const comments = ref([])
 const loading = ref(false)
 const submitting = ref(false)
+const readingId = ref(null)   // 追蹤哪個留言正在標記中（loading 狀態）
 const newComment = ref('')
 const inputRef = ref(null)
 const bodyRef = ref(null)
-
-// @mention
 const allColleagues = ref([])
 const mentionList = ref([])
 let mentionStartIndex = -1
+
+// ─── Helper：這則留言有沒有 @tag 到我 ─────────────────────────
+function isMentionedMe(comment) {
+  const myId = auth.user?.員工工號
+  if (!myId) return false
+  // 支援兩種格式：mentions 陣列 或 content 內有 @我的名字
+  if (Array.isArray(comment.mentions)) {
+    return comment.mentions.includes(myId)
+  }
+  // fallback：content 內搜尋
+  const myName = auth.user?.員工姓名
+  return myName ? comment.content.includes('@' + myName) : false
+}
+
+// ─── Helper：我有沒有讀過這則留言 ────────────────────────────
+function isReadByMe(comment) {
+  const myId = auth.user?.員工工號
+  if (!myId) return true
+  return !!comment.isRead?.[myId]
+}
 
 function close() {
   mentionList.value = []
@@ -115,31 +157,48 @@ async function loadComments() {
   }
 }
 
+// ─── 標記已讀 ────────────────────────────────────────────────
+async function markAsRead(idx, commentId) {
+  if (readingId.value === commentId) return
+  readingId.value = commentId
+  try {
+    await commentService.markAsRead(props.articleId, commentId)
+
+    // ✅ 用 splice 替換 item，確保 Vue 偵測到巢狀屬性變更
+    const old = comments.value[idx]
+    comments.value.splice(idx, 1, {
+      ...old,
+      isRead: { ...old.isRead, [auth.user.員工工號]: true },
+    })
+
+    // 同步更新首頁通知卡片（如果有對應通知）
+    const matchingNotif = notifStore.notifications.find(
+      n => n.commentId === commentId && n.targetUserId === auth.user.員工工號
+    )
+    if (matchingNotif && !matchingNotif.isRead) {
+      await notifStore.markAsRead(matchingNotif.id)
+    }
+  } catch {
+    ElMessage.error('標記已讀失敗')
+  } finally {
+    readingId.value = null
+  }
+}
+
 // ─── @mention autocomplete ────────────────────────────────────
 function onInput() {
   const text = newComment.value
   const cursorPos = inputRef.value?.$el?.querySelector('textarea')?.selectionStart ?? text.length
-
-  // Find the last @ before cursor
   const textBeforeCursor = text.slice(0, cursorPos)
   const atIdx = textBeforeCursor.lastIndexOf('@')
 
-  if (atIdx === -1) {
-    mentionList.value = []
-    return
-  }
+  if (atIdx === -1) { mentionList.value = []; return }
 
-  // Check no space between @ and cursor
   const query = textBeforeCursor.slice(atIdx + 1)
-  if (/\s/.test(query)) {
-    mentionList.value = []
-    return
-  }
+  if (/\s/.test(query)) { mentionList.value = []; return }
 
   mentionStartIndex = atIdx
   const lowerQuery = query.toLowerCase()
-
-  // Filter colleagues by name or dept, limit to current dept
   const pool = dirStore.currentDept
     ? allColleagues.value.filter(c => c.部門代碼 === dirStore.currentDept)
     : allColleagues.value
@@ -166,17 +225,15 @@ function insertMention(colleague) {
   })
 }
 
-// ─── Submit ───────────────────────────────────────────────────
+// ─── 送出留言 ─────────────────────────────────────────────────
 async function submitComment() {
   const text = newComment.value.trim()
   if (!text) return
   mentionList.value = []
   submitting.value = true
   try {
-    // API already stores into mockComments; we just reload from source to avoid duplicates
     await commentService.create(props.articleId, text)
     newComment.value = ''
-    // Reload from mock store (single source of truth) instead of pushing locally
     await loadComments()
     ElMessage.success('留言已送出')
     await nextTick()
@@ -230,7 +287,6 @@ watch(() => props.modelValue, async (v) => {
   gap: 8px;
   font-size: 15px;
   font-weight: 700;
-  color: var(--color-text-primary);
 }
 
 .panel-body {
@@ -238,8 +294,6 @@ watch(() => props.modelValue, async (v) => {
   overflow-y: auto;
   padding: 16px 20px;
 }
-
-.panel-loading { padding: 8px 0; }
 
 .comment-list { display: flex; flex-direction: column; gap: 16px; }
 
@@ -265,9 +319,17 @@ watch(() => props.modelValue, async (v) => {
 }
 
 .comment-author { font-size: 13px; font-weight: 600; flex: 1; }
-.comment-time { font-size: 11px; color: var(--color-text-muted); }
+.comment-time   { font-size: 11px; color: var(--color-text-muted); }
+
+.comment-body-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
 
 .comment-body {
+  flex: 1;
   font-size: 13px;
   line-height: 1.6;
   color: var(--color-text-secondary);
@@ -276,6 +338,25 @@ watch(() => props.modelValue, async (v) => {
 :deep(.mention) {
   color: var(--color-primary);
   font-weight: 600;
+}
+
+/* 已查看按鈕 */
+.read-check-btn {
+  flex-shrink: 0;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+/* 已讀標記 */
+.read-done-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--color-success);
+  margin-top: 4px;
+  white-space: nowrap;
 }
 
 /* ─── Footer ─────────────────────────────────────────────── */
@@ -323,20 +404,10 @@ watch(() => props.modelValue, async (v) => {
   font-weight: 600;
   flex-shrink: 0;
 }
+.mention-name { font-size: 13px; font-weight: 600; color: var(--color-text-primary); }
+.mention-dept { font-size: 11px; color: var(--color-text-muted); margin-left: auto; }
 
-.mention-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.mention-dept {
-  font-size: 11px;
-  color: var(--color-text-muted);
-  margin-left: auto;
-}
-
-/* ─── Slide-in animation ─────────────────────────────────── */
+/* ─── Slide-in ───────────────────────────────────────────── */
 .panel-enter-active, .panel-leave-active { transition: opacity 0.25s ease; }
 .panel-enter-active .side-panel, .panel-leave-active .side-panel {
   transition: transform 0.28s cubic-bezier(.4,0,.2,1);
