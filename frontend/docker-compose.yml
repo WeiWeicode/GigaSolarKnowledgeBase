@@ -1,0 +1,9 @@
+services:
+  GigaKsfrontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+       - "15080:80"
+    volumes:
+        - ./dist:/usr/share/nginx/html

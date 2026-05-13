@@ -183,7 +183,7 @@ export const mockAttachments = [
   {
     id: 201, title: '伺服器清冊 Q1 2026',
     description: '2026 年 Q1 伺服器清冊，包含主機 IP、規格、負責人資訊。',
-    files: [{ uuid: 'f1a2b3c4', name: '伺服器清冊 Q1 2026.xlsx', size: 45678, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', url: '/uploads/demo/伺服器清冊Q1_2026.xlsx' }],
+    files: [{ uuid: 'f1a2b3c4', name: '伺服器清冊 Q1 2026.xlsx', size: 45678, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', url: '/uploads/demo/伺服器清冊Q1_2026.xlsx', versionNumber: 1 }],
     isPublished: true, isPublic: false,
     createdAt: '2026-04-01T08:00:00Z', updatedAt: '2026-04-20T16:00:00Z',
     createdBy: { 員工工號: 'GV112001', 員工姓名: '蔣佳緯' },
@@ -223,5 +223,13 @@ export const mockVersionHistory = {
     { versionNumber: 7, editorId: 'GV112001', editorName: '蔣佳緯', savedAt: '2026-05-05T09:00:00Z', diffSummary: '更新 Docker Compose v2 說明', content: `# Docker 部署 SOP\n\n## 前置作業\n\n確認伺服器已安裝 Docker Engine >= 24.x 及 Docker Compose v2。\n\n## 步驟\n\n1. Clone 專案至伺服器\n2. 複製 \`.env.example\` 為 \`.env\` 並填寫設定\n3. 執行 \`docker compose up -d\`\n\n\`\`\`bash\ngit clone https://github.com/gigasolar/kb.git\ncd kb\ncp .env.example .env\ndocker compose up -d\n\`\`\`\n` },
     { versionNumber: 6, editorId: 'S094009',  editorName: '鄭智寬', savedAt: '2026-04-18T10:00:00Z', diffSummary: '補充備份策略章節', content: `# Docker 部署 SOP\n\n## 前置作業\n\n確認伺服器已安裝 Docker Engine >= 24.x 及 Docker Compose v2。\n\n## 備份策略\n\n請定時使用 crontab 備份 DB...\n` },
     { versionNumber: 5, editorId: 'GV112001', editorName: '蔣佳緯', savedAt: '2026-04-05T14:00:00Z', diffSummary: '修正環境變數清單', content: `# Docker 部署 SOP\n\n## 前置作業\n\n確認伺服器已安裝 Docker Engine >= 24.x 及 Docker Compose v2。\n` },
+  ],
+}
+
+// 附件版本歷史（與文章版本歷史分開存放，無 content 快照，只記錄異動描述）
+export const mockAttachmentVersionHistory = {
+  201: [
+    { versionNumber: 2, editorId: 'GV112001', editorName: '蔣佳緯', savedAt: '2026-04-20T16:00:00Z', diffSummary: '更新 Q1 伺服器清冊資料，補充備援機台欄位' },
+    { versionNumber: 1, editorId: 'GV112001', editorName: '蔣佳緯', savedAt: '2026-04-01T08:00:00Z', diffSummary: '初始版本建立' },
   ],
 }

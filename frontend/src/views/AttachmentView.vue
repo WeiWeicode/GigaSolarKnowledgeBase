@@ -13,9 +13,12 @@
       <div class="article-header">
         <div class="header-left-col">
           <el-button v-if="isEditing && mode !== 'create'" text circle title="退回查看" @click="cancelEdit">
-            <el-icon size="18"><ArrowLeft /></el-icon>
+            <el-icon size="18">
+              <ArrowLeft />
+            </el-icon>
           </el-button>
-          <el-input v-if="isEditing || mode === 'create'" v-model="form.title" placeholder="輸入附件標題" size="large" class="title-input" />
+          <el-input v-if="isEditing || mode === 'create'" v-model="form.title" placeholder="輸入附件標題" size="large"
+            class="title-input" />
           <h1 v-else class="article-title">{{ form.title || attachment?.files?.[0]?.name || '附件' }}</h1>
         </div>
         <div class="header-right-col">
@@ -24,9 +27,17 @@
             <span class="meta-item">更新：{{ formatDateTime(attachment?.updatedAt) }}</span>
           </div>
           <div class="header-actions">
-            <el-button v-if="!isEditing && mode !== 'create' && canEdit" type="primary" @click="isEditing = true"><el-icon><Edit /></el-icon> 編輯</el-button>
-            <el-button v-if="isEditing && mode !== 'create'" type="success" :loading="saving" @click="saveAttachment"><el-icon><Check /></el-icon> 儲存</el-button>
-            <el-button v-if="mode === 'create'" type="warning" :loading="saving" @click="createAttachment"><el-icon><Upload /></el-icon> 建立</el-button>
+            <el-button v-if="!isEditing && mode !== 'create' && canEdit" type="primary"
+              @click="isEditing = true"><el-icon>
+                <Edit />
+              </el-icon> 編輯</el-button>
+            <el-button v-if="isEditing && mode !== 'create'" type="success" :loading="saving"
+              @click="saveAttachment"><el-icon>
+                <Check />
+              </el-icon> 儲存</el-button>
+            <el-button v-if="mode === 'create'" type="warning" :loading="saving" @click="createAttachment"><el-icon>
+                <Upload />
+              </el-icon> 建立</el-button>
           </div>
         </div>
       </div>
@@ -37,30 +48,39 @@
 
           <!-- 分類資訊 -->
           <div class="section-block">
-            <div class="section-title-small"><el-icon><Collection /></el-icon> 分類資訊</div>
+            <div class="section-title-small"><el-icon>
+                <Collection />
+              </el-icon> 分類資訊</div>
             <el-row :gutter="40">
               <el-col :span="12">
                 <div class="field-group">
                   <label class="field-label">所屬目錄</label>
-                  <el-button plain size="small" @click="showDirPicker = true" class="full-width"><el-icon><Folder /></el-icon> 選擇目錄</el-button>
+                  <el-button plain size="small" @click="showDirPicker = true" class="full-width" :disabled="!form.isPublished"><el-icon>
+                      <Folder />
+                    </el-icon> 選擇目錄</el-button>
                   <div class="selected-dirs" v-if="form.directories.length">
-                    <el-tag v-for="d in form.directories" :key="d" closable size="small" @close="removeDir(d)">{{ getDirLabel(d) }}</el-tag>
+                    <el-tag v-for="d in form.directories" :key="d" :closable="form.isPublished" size="small" @close="removeDir(d)">{{
+                      getDirLabel(d) }}</el-tag>
                   </div>
                 </div>
               </el-col>
               <el-col :span="12">
                 <div class="field-group">
                   <label class="field-label">關聯文章</label>
-                  <el-button plain size="small" @click="showAttachPicker = true" class="full-width"><el-icon><Document /></el-icon> 選擇關聯文章</el-button>
+                  <el-button plain size="small" @click="showAttachPicker = true" class="full-width"><el-icon>
+                      <Document />
+                    </el-icon> 選擇關聯文章</el-button>
                   <div class="selected-tags-box" v-if="form.linkedArticleIds.length">
-                    <el-tag v-for="aid in form.linkedArticleIds" :key="aid" size="small" closable @close="removeLinkedArticle(aid)">{{ getArticleName(aid) }}</el-tag>
+                    <el-tag v-for="aid in form.linkedArticleIds" :key="aid" size="small" closable
+                      @close="removeLinkedArticle(aid)">{{ getArticleName(aid) }}</el-tag>
                   </div>
                 </div>
               </el-col>
               <el-col :span="12">
                 <div class="field-group mb-0">
                   <label class="field-label">標籤</label>
-                  <el-select v-model="form.tagIds" multiple filterable allow-create placeholder="選擇或輸入標籤" size="small" class="full-width">
+                  <el-select v-model="form.tagIds" multiple filterable allow-create placeholder="選擇或輸入標籤" size="small"
+                    class="full-width">
                     <el-option v-for="t in tags" :key="t.id" :label="t.name" :value="t.id" />
                   </el-select>
                 </div>
@@ -72,7 +92,9 @@
 
           <!-- 權限設定 -->
           <div class="section-block">
-            <div class="section-title-small"><el-icon><Lock /></el-icon> 權限設定</div>
+            <div class="section-title-small"><el-icon>
+                <Lock />
+              </el-icon> 權限設定</div>
             <el-row :gutter="40">
               <el-col :span="12">
                 <div class="field-group">
@@ -86,16 +108,20 @@
               <el-col :span="12">
                 <div class="field-group">
                   <label class="field-label">附件編輯權限</label>
-                  <el-button plain size="small" @click="showEditorPicker = true" class="full-width"><el-icon><User /></el-icon> 指定可編輯同仁</el-button>
+                  <el-button plain size="small" @click="showEditorPicker = true" class="full-width"><el-icon>
+                      <User />
+                    </el-icon> 指定可編輯同仁</el-button>
                   <div class="selected-tags-box" v-if="selectedEditors.length">
-                    <el-tag v-for="e in selectedEditors" :key="e.員工工號" size="small" closable @close="removeEditor(e.員工工號)">{{ e.員工姓名 }}</el-tag>
+                    <el-tag v-for="e in selectedEditors" :key="e.員工工號" size="small" closable
+                      @close="removeEditor(e.員工工號)">{{ e.員工姓名 }}</el-tag>
                   </div>
                 </div>
               </el-col>
               <el-col :span="12">
                 <div class="field-group mb-0">
                   <label class="field-label">存取權限 – 指定人員</label>
-                  <el-select v-model="form.hasAccess.人員" multiple filterable placeholder="空白代表部門全員" size="small" class="full-width">
+                  <el-select v-model="form.hasAccess.人員" multiple filterable placeholder="空白代表部門全員" size="small"
+                    class="full-width">
                     <el-option v-for="c in currentDeptColleagues" :key="c.員工工號" :label="c.員工姓名" :value="c.員工工號" />
                   </el-select>
                 </div>
@@ -119,7 +145,9 @@
 
           <!-- 其他與操作 -->
           <div class="section-block mb-0">
-            <div class="section-title-small"><el-icon><MoreFilled /></el-icon> 其他與操作</div>
+            <div class="section-title-small"><el-icon>
+                <MoreFilled />
+              </el-icon> 其他與操作</div>
             <el-row :gutter="40">
               <el-col :span="12">
                 <div class="field-group">
@@ -132,21 +160,20 @@
               </el-col>
               <el-col :span="12">
                 <div class="field-group side-btns" style="margin-top:24px;">
-                  <el-button plain size="small" @click="showCommentPanel = true"><el-icon><ChatDotSquare /></el-icon> 評論</el-button>
-                  <el-button plain size="small" @click="showHistoryPanel = true"><el-icon><Clock /></el-icon> 歷史紀錄</el-button>
+                  <el-button plain size="small" @click="showCommentPanel = true"><el-icon>
+                      <ChatDotSquare />
+                    </el-icon> 評論</el-button>
+                  <el-button plain size="small" @click="showHistoryPanel = true"><el-icon>
+                      <Clock />
+                    </el-icon> 歷史紀錄</el-button>
                 </div>
               </el-col>
               <!-- ✅ 修改說明：label 已修正，binding 改為 form.changeNote，改用 textarea -->
               <el-col :span="24">
                 <div class="field-group mb-0">
                   <label class="field-label">修改說明</label>
-                  <el-input
-                    v-model="form.changeNote"
-                    type="textarea"
-                    :rows="3"
-                    placeholder="簡述本次修改內容（選填，儲存後寫入版本歷史）"
-                    resize="none"
-                  />
+                  <el-input v-model="form.changeNote" type="textarea" :rows="3" placeholder="簡述本次修改內容（選填，儲存後寫入版本歷史）"
+                    resize="none" />
                 </div>
               </el-col>
             </el-row>
@@ -156,11 +183,16 @@
 
       <!-- View mode action bar -->
       <div v-if="mode === 'view' && !isEditing" class="view-action-bar">
-        <el-button plain @click="showCommentPanel = true"><el-icon><ChatDotSquare /></el-icon> 評論</el-button>
+        <el-button plain @click="showCommentPanel = true"><el-icon>
+            <ChatDotSquare />
+          </el-icon> 評論</el-button>
         <el-button plain @click="showHistoryPanel = true" class="history-btn">
-          <el-icon><Clock /></el-icon>
+          <el-icon>
+            <Clock />
+          </el-icon>
           <span>修改紀錄 v{{ latestVersionNumber }}</span>
-          <span v-if="attachment?.updatedAt" class="history-date">&nbsp;· {{ formatDateTime(attachment.updatedAt) }}</span>
+          <span v-if="attachment?.updatedAt" class="history-date">&nbsp;· {{ formatDateTime(attachment.updatedAt)
+            }}</span>
         </el-button>
       </div>
 
@@ -168,27 +200,34 @@
       <div v-if="!isEditing && mode === 'view'" class="article-meta-info kb-card">
         <el-descriptions :column="2" border size="small">
           <el-descriptions-item label="標籤">
-            <el-tag v-for="t in attachment?.tags" :key="t.id" size="small" effect="plain" class="mr-1 mb-1">{{ t.name }}</el-tag>
+            <el-tag v-for="t in attachment?.tags" :key="t.id" size="small" effect="plain" class="mr-1 mb-1">{{ t.name
+              }}</el-tag>
             <span v-if="!attachment?.tags?.length" class="text-muted">無標籤</span>
           </el-descriptions-item>
           <el-descriptions-item label="關聯文章">
             <div v-if="form.linkedArticleIds.length" class="att-links">
               <template v-for="aid in form.linkedArticleIds" :key="aid">
-                <el-link v-if="isArticleAccessible(aid)" type="primary" underline="never" @click="router.push(`/article/${aid}`)" class="mb-1 d-block">
-                  <el-icon><Document /></el-icon> {{ getArticleName(aid) }}
+                <el-link v-if="isArticleAccessible(aid)" type="primary" underline="never"
+                  @click="router.push(`/article/${aid}`)" class="mb-1 d-block">
+                  <el-icon>
+                    <Document />
+                  </el-icon> {{ getArticleName(aid) }}
                 </el-link>
               </template>
             </div>
             <span v-else class="text-muted">無關聯文章</span>
           </el-descriptions-item>
           <el-descriptions-item label="文件上架">
-            <el-tag :type="form.isPublished ? 'success' : 'info'" size="small">{{ form.isPublished ? '已上架' : '已下架' }}</el-tag>
+            <el-tag :type="form.isPublished ? 'success' : 'info'" size="small">{{ form.isPublished ? '已上架' : '已下架'
+              }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="是否公開">
-            <el-tag :type="form.isPublic ? 'warning' : 'info'" size="small">{{ form.isPublic ? '全集團公開' : '部門私有' }}</el-tag>
+            <el-tag :type="form.isPublic ? 'warning' : 'info'" size="small">{{ form.isPublic ? '全集團公開' : '部門私有'
+              }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="所屬目錄">
-            <el-tag v-for="d in form.directories" :key="d" size="small" type="info" class="mr-1 mb-1">{{ getDirLabel(d) }}</el-tag>
+            <el-tag v-for="d in form.directories" :key="d" size="small" type="info" class="mr-1 mb-1">{{ getDirLabel(d)
+              }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="職級門檻">
             <el-tag size="small" type="warning">{{ gradeLevelLabel(form.hasAccess.職級) }}</el-tag>
@@ -204,22 +243,20 @@
         </div>
         <!-- 編輯 / 建立模式下的附件說明輸入框 -->
         <div v-else class="field-group mb-0">
-          <el-input v-model="form.description" type="textarea" :rows="4" placeholder="描述附件內容、用途、注意事項..." resize="none" />
+          <el-input v-model="form.description" type="textarea" :rows="4" placeholder="描述附件內容、用途、注意事項..."
+            resize="none" />
         </div>
       </div>
 
       <!-- File upload area -->
       <div class="kb-card detail-section">
         <h3 class="section-title">檔案清單</h3>
-        <el-upload
-          v-if="isEditing || mode === 'create'"
-          drag multiple :auto-upload="false" :file-list="fileList"
-          accept=".doc,.docx,.xls,.xlsx,.pdf,.jpg,.png,.txt"
-          class="upload-dragger"
-          @change="onFileChange"
-        >
+        <el-upload v-if="isEditing || mode === 'create'" drag multiple :auto-upload="false" :file-list="fileList"
+          accept=".doc,.docx,.xls,.xlsx,.pdf,.jpg,.png,.txt" class="upload-dragger" @change="onFileChange">
           <div class="upload-inner">
-            <el-icon class="upload-icon"><UploadFilled /></el-icon>
+            <el-icon class="upload-icon">
+              <UploadFilled />
+            </el-icon>
             <p class="upload-text">拖曳檔案至此或 <em>點擊選取</em></p>
             <p class="upload-hint">支援：Word / Excel / PDF / 圖片 / 純文字，單檔 ≤ 5MB</p>
           </div>
@@ -227,8 +264,13 @@
         <div class="file-list" v-if="attachment?.files?.length">
           <div v-for="f in attachment.files" :key="f.uuid" class="file-item">
             <div class="file-info">
-              <el-icon class="file-icon"><Paperclip /></el-icon>
+              <el-icon class="file-icon">
+                <Paperclip />
+              </el-icon>
               <span class="file-name">{{ f.name }}</span>
+              <el-tag size="small" type="info" effect="plain" class="file-version-tag">
+                v{{ f.versionNumber || 1 }}
+              </el-tag>
               <span class="file-size">{{ formatFileSize(f.size) }}</span>
             </div>
             <el-button size="small" type="primary" plain :href="f.url" tag="a" target="_blank">下載</el-button>
@@ -238,11 +280,13 @@
     </template>
 
     <CommentPanel v-model="showCommentPanel" :article-id="id" />
-    <VersionHistoryPanel v-model="showHistoryPanel" :article-id="id" />
+    <VersionHistoryPanel v-model="showHistoryPanel" :article-id="id" type="attachment" />
 
     <!-- Dir Picker -->
     <el-dialog v-model="showDirPicker" title="選擇目錄" width="500px">
-      <el-tree ref="dirTreeRef" :data="dirPickerTree" :props="{ label: 'label', children: 'children', disabled: data => data.type !== 'directory' }" show-checkbox check-strictly check-on-click-node node-key="id" default-expand-all />
+      <el-tree ref="dirTreeRef" :data="dirPickerTree"
+        :props="{ label: 'label', children: 'children', disabled: data => data.type !== 'directory' }" show-checkbox
+        check-strictly check-on-click-node node-key="id" default-expand-all />
       <template #footer>
         <el-button @click="showDirPicker = false">取消</el-button>
         <el-button type="primary" @click="confirmDirSelection">確認</el-button>
@@ -256,7 +300,8 @@
         <el-table-column prop="title" label="文章標題" />
         <el-table-column label="所屬目錄">
           <template #default="{ row }">
-            <el-tag v-for="dId in row.directories" :key="dId" size="small" type="info" class="mr-1">{{ getDirLabel(dId) }}</el-tag>
+            <el-tag v-for="dId in row.directories" :key="dId" size="small" type="info" class="mr-1">{{ getDirLabel(dId)
+              }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="更新時間">
@@ -273,7 +318,8 @@
     <el-dialog v-model="showEditorPicker" title="指定可編輯同仁" width="500px">
       <el-checkbox-group v-model="tempEditors" class="editor-checkbox-group">
         <div v-for="c in currentDeptColleagues" :key="c.員工工號" class="editor-checkbox-item">
-          <el-checkbox :value="c.員工工號" :label="c.員工工號">{{ c.員工姓名 }} <span class="dept-name">({{ c.部門名稱 }})</span></el-checkbox>
+          <el-checkbox :value="c.員工工號" :label="c.員工工號">{{ c.員工姓名 }} <span class="dept-name">({{ c.部門名稱
+              }})</span></el-checkbox>
         </div>
       </el-checkbox-group>
       <div v-if="currentDeptColleagues.length === 0" class="no-data">該部門目前無同仁資料</div>
@@ -502,49 +548,301 @@ watch(() => [props.id, props.mode], async ([newId, newMode]) => {
 </script>
 
 <style scoped>
-.attachment-view { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
-.page-loading { padding: 24px 0; }
-.access-denied-banner { display: flex; justify-content: center; align-items: center; min-height: 400px; }
-.article-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
-.header-left-col { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
-.article-title { font-size: 22px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.title-input { font-size: 18px; font-weight: 600; }
-.header-right-col { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex-shrink: 0; }
-.meta-dates { display: flex; gap: 12px; flex-wrap: wrap; }
-.meta-item { font-size: 11px; color: var(--color-text-muted,#999); }
-.header-actions { display: flex; gap: 8px; }
-.form-fields { padding: 24px; }
-.field-group { margin-bottom: 20px; }
-.section-title-small { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--color-primary,#6366f1); margin-bottom: 18px; padding-bottom: 8px; border-bottom: 1px dashed #e5e7eb; }
-.field-label { display: block; font-size: 12px; font-weight: 600; color: var(--color-text-secondary,#666); margin-bottom: 8px; }
-.section-block { margin-bottom: 24px; }
-.full-width { width: 100%; }
-.selected-dirs, .selected-tags-box { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding: 8px; background: #f9fafb; border-radius: 6px; border: 1px solid #f3f4f6; min-height: 32px; }
-.side-btns { display: flex; gap: 8px; }
-.view-action-bar { display: flex; gap: 10px; }
-.article-meta-info { padding: 0; overflow: hidden; }
-:deep(.el-descriptions__label) { background-color: var(--color-surface-2)!important; font-weight: 600; color: var(--color-text-secondary); width: 120px; }
-.att-links { display: flex; flex-direction: column; gap: 4px; }
-.mr-1 { margin-right: 4px; } .mb-1 { margin-bottom: 4px; }
-.text-muted { color: var(--color-text-muted,#999); font-size: 12px; font-style: italic; }
-.d-block { display: block; }
-.detail-section { padding: 24px; }
-.section-title { font-size: 14px; font-weight: 700; color: var(--color-text-primary); margin-bottom: 16px; padding-left: 10px; border-left: 4px solid var(--color-primary); line-height: 1; }
-.desc-view { font-size: 14px; line-height: 1.6; color: var(--color-text-secondary); white-space: pre-wrap; padding: 12px; background: var(--color-surface-2); border-radius: var(--border-radius-sm); }
-.upload-dragger { width: 100%; margin-top: 8px; }
-.upload-inner { text-align: center; padding: 20px 0; }
-.upload-icon { font-size: 40px; color: var(--color-text-muted); margin-bottom: 10px; }
-.upload-text { font-size: 14px; color: var(--color-text-secondary); margin-bottom: 4px; }
-.upload-text em { color: var(--color-primary); font-style: normal; cursor: pointer; }
-.upload-hint { font-size: 12px; color: var(--color-text-muted); }
-.file-list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
-.file-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--color-surface-2); border-radius: var(--border-radius-sm); font-size: 13px; }
-.file-info { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
-.file-icon { color: var(--color-success); flex-shrink: 0; }
-.file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-size { color: var(--color-text-muted); font-size: 11px; flex-shrink: 0; }
-.editor-checkbox-group { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; }
-.editor-checkbox-item { margin-bottom: 4px; }
-.dept-name { color: #999; font-size: 12px; margin-left: 4px; }
-.no-data { color: #999; text-align: center; padding: 20px; }
+.attachment-view {
+  max-width: 980px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.page-loading {
+  padding: 24px 0;
+}
+
+.access-denied-banner {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+}
+
+.article-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.header-left-col {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.article-title {
+  font-size: 22px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title-input {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.header-right-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.meta-dates {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.meta-item {
+  font-size: 11px;
+  color: var(--color-text-muted, #999);
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.form-fields {
+  padding: 24px;
+}
+
+.field-group {
+  margin-bottom: 20px;
+}
+
+.section-title-small {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-primary, #6366f1);
+  margin-bottom: 18px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #e5e7eb;
+}
+
+.field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary, #666);
+  margin-bottom: 8px;
+}
+
+.section-block {
+  margin-bottom: 24px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.selected-dirs,
+.selected-tags-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 8px;
+  background: #f9fafb;
+  border-radius: 6px;
+  border: 1px solid #f3f4f6;
+  min-height: 32px;
+}
+
+.side-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.view-action-bar {
+  display: flex;
+  gap: 10px;
+}
+
+.article-meta-info {
+  padding: 0;
+  overflow: hidden;
+}
+
+:deep(.el-descriptions__label) {
+  background-color: var(--color-surface-2) !important;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  width: 120px;
+}
+
+.att-links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mr-1 {
+  margin-right: 4px;
+}
+
+.mb-1 {
+  margin-bottom: 4px;
+}
+
+.text-muted {
+  color: var(--color-text-muted, #999);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.d-block {
+  display: block;
+}
+
+.detail-section {
+  padding: 24px;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 16px;
+  padding-left: 10px;
+  border-left: 4px solid var(--color-primary);
+  line-height: 1;
+}
+
+.desc-view {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  padding: 12px;
+  background: var(--color-surface-2);
+  border-radius: var(--border-radius-sm);
+}
+
+.upload-dragger {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.upload-inner {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.upload-icon {
+  font-size: 40px;
+  color: var(--color-text-muted);
+  margin-bottom: 10px;
+}
+
+.upload-text {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin-bottom: 4px;
+}
+
+.upload-text em {
+  color: var(--color-primary);
+  font-style: normal;
+  cursor: pointer;
+}
+
+.upload-hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.file-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--color-surface-2);
+  border-radius: var(--border-radius-sm);
+  font-size: 13px;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.file-icon {
+  color: var(--color-success);
+  flex-shrink: 0;
+}
+
+.file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-version-tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.file-size {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.editor-checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.editor-checkbox-item {
+  margin-bottom: 4px;
+}
+
+.dept-name {
+  color: #999;
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+.no-data {
+  color: #999;
+  text-align: center;
+  padding: 20px;
+}
 </style>

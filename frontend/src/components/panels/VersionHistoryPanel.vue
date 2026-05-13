@@ -28,8 +28,9 @@
                 <div class="version-diff" v-if="v.diffSummary">{{ v.diffSummary }}</div>
               </div>
               <div class="version-actions">
-                <!-- 預覽：跳到 /article/:id?version=N (查看模式) -->
+                <!-- 附件版本無內容快照，不顯示預覽按鈕 -->
                 <el-button
+                  v-if="type !== 'attachment'"
                   size="small" text type="primary"
                   @click="preview(v.versionNumber)"
                 >預覽</el-button>
@@ -44,13 +45,14 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import { versionService } from '@/services/api.js'
+import { versionService, attachmentVersionService } from '@/services/api.js'
 import { formatDateTime } from '@/utils/dateFormat.js'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps({
   modelValue: Boolean,
   articleId: { type: Number, default: null },
+  type: { type: String, default: 'article' }, // 'article' | 'attachment'
 })
 const emit = defineEmits(['update:modelValue', 'preview'])
 
@@ -64,13 +66,18 @@ async function loadVersions() {
   if (!props.articleId) return
   loading.value = true
   try {
-    versions.value = await versionService.getByArticleId(props.articleId)
+    if (props.type === 'attachment') {
+      versions.value = await attachmentVersionService.getByAttachmentId(props.articleId)
+    } else {
+      versions.value = await versionService.getByArticleId(props.articleId)
+    }
     if (versions.value.length > 0) currentVersion.value = versions.value[0].versionNumber
   } finally { loading.value = false }
 }
 
-// 預覽：關閉面板，讓父層跳轉到 /article/:id?version=N
+// 附件版本無內容快照，不支援預覽；文章版本預覽才導向 /article/:id?version=N
 function preview(versionNumber) {
+  if (props.type === 'attachment') return
   emit('preview', props.articleId, versionNumber)
 }
 

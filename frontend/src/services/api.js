@@ -3,7 +3,7 @@ import axios from 'axios'
 import {
   mockCurrentUser, mockDirectoryTree, mockTags, mockColleagues,
   mockArticles, mockAttachments, mockNotifications, mockComments,
-  mockVersionHistory, mockCompanies, mockDepartments,
+  mockVersionHistory, mockAttachmentVersionHistory, mockCompanies, mockDepartments,
 } from './mockData.js'
 
 const delay = (ms = 300) => new Promise(r => setTimeout(r, ms))
@@ -265,6 +265,10 @@ export const attachmentService = {
   async create(data) {
     await delay(500)
     const newAtt = { id: Date.now(), ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), versionNumber: 1, hasAccess: { 部門: mockCurrentUser.部門代碼, 人員: [], 職級: 20 } }
+    // 建立時所有檔案均為 v1
+    if (newAtt.files?.length) {
+      newAtt.files = newAtt.files.map(f => ({ ...f, versionNumber: 1 }))
+    }
     mockAttachments.push(newAtt)
     data.directories?.forEach(dirId => {
       const parent = findTreeNodeById(mockDirectoryTree, dirId)
@@ -277,7 +281,23 @@ export const attachmentService = {
   async update(id, data) {
     await delay(400)
     const index = mockAttachments.findIndex(a => a.id === Number(id))
+    // ── 寫入版本歷史（與 articleService.update 一致）──────────────
+    if (!mockAttachmentVersionHistory[id]) mockAttachmentVersionHistory[id] = []
+    const lastVer = mockAttachmentVersionHistory[id][0]?.versionNumber || (mockAttachments[index]?.versionNumber || 0)
+    const newVer = lastVer + 1
+    mockAttachmentVersionHistory[id].unshift({
+      versionNumber: newVer,
+      editorId:   mockCurrentUser.員工工號,
+      editorName: mockCurrentUser.員工姓名,
+      savedAt:    new Date().toISOString(),
+      diffSummary: data.changeNote || '（未填寫修改說明）',
+    })
+    // ─────────────────────────────────────────────────────────────
     const oldLinks = mockAttachments[index]?.linkedArticleIds || []
+    // 本次新上傳的檔案（尚未有 versionNumber）打上當次版本號
+    if (data.files?.length) {
+      data = { ...data, files: data.files.map(f => f.versionNumber ? f : { ...f, versionNumber: newVer }) }
+    }
     if (index !== -1) mockAttachments[index] = { ...mockAttachments[index], ...data, updatedAt: new Date().toISOString() }
     function removeAttFromTree(nodes, attId) { for (let i = nodes.length - 1; i >= 0; i--) { if (nodes[i].type === 'attachment' && nodes[i].attachmentId === Number(attId)) nodes.splice(i, 1); else if (nodes[i].children) removeAttFromTree(nodes[i].children, attId) } }
     removeAttFromTree(mockDirectoryTree, id)
@@ -289,7 +309,8 @@ export const attachmentService = {
     const newLinks = data.linkedArticleIds || []
     newLinks.forEach(articleId => { const a = mockArticles.find(a => a.id === Number(articleId)); if (a) { if (!a.attachmentIds) a.attachmentIds = []; if (!a.attachmentIds.includes(Number(id))) a.attachmentIds.push(Number(id)) } })
     oldLinks.filter(aid => !newLinks.includes(aid)).forEach(articleId => { const a = mockArticles.find(a => a.id === Number(articleId)); if (a?.attachmentIds) a.attachmentIds = a.attachmentIds.filter(x => x !== Number(id)) })
-    return { ...(mockAttachments[index] || data), id, updatedAt: new Date().toISOString() }
+    if (index !== -1) mockAttachments[index] = { ...mockAttachments[index], versionNumber: newVer }
+    return { ...(mockAttachments[index] || data), id, updatedAt: new Date().toISOString(), versionNumber: newVer }
   },
 
   async uploadFiles(files) { await delay(1000); return files.map(f => ({ uuid: 'uuid-' + Date.now(), name: f.name, size: f.size, url: '/uploads/demo/' + f.name })) },
@@ -329,6 +350,10 @@ export const commentService = {
 export const versionService = {
   async getByArticleId(articleId) { await delay(200); return mockVersionHistory[articleId] || [] },
   async rollback(articleId, versionNumber) { await delay(500); return { success: true, newVersionNumber: (mockVersionHistory[articleId]?.length || 0) + 1 } },
+}
+
+export const attachmentVersionService = {
+  async getByAttachmentId(attachmentId) { await delay(200); return mockAttachmentVersionHistory[attachmentId] || [] },
 }
 
 export const tagService = {

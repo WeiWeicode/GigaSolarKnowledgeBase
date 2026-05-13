@@ -57,11 +57,11 @@
               <el-col :span="12">
                 <div class="field-group">
                   <label class="field-label">所屬目錄</label>
-                  <el-button plain size="small" @click="showDirPicker = true" class="full-width">
+                  <el-button plain size="small" @click="showDirPicker = true" class="full-width" :disabled="!form.isPublished">
                     <el-icon><Folder /></el-icon> 選擇目錄
                   </el-button>
                   <div class="selected-dirs" v-if="form.directories.length">
-                    <el-tag v-for="d in form.directories" :key="d" closable size="small" @close="removeDir(d)">{{ getDirLabel(d) }}</el-tag>
+                    <el-tag v-for="d in form.directories" :key="d" :closable="form.isPublished" size="small" @close="removeDir(d)">{{ getDirLabel(d) }}</el-tag>
                   </div>
                 </div>
               </el-col>
@@ -230,6 +230,9 @@
       <div class="editor-container kb-card">
         <template v-if="isEditing || mode === 'create'">
           <div :key="editorKey" ref="vditorRef" class="vditor-host" />
+          <div v-if="!vditorReady" class="vditor-loading-mask">
+            <el-skeleton :rows="4" animated />
+          </div>
         </template>
         <div v-else ref="vditorPreviewRef" class="markdown-body" />
       </div>
@@ -329,6 +332,7 @@ const colleagues = ref([])
 const allAttachments = ref([])
 let vditorInstance = null
 const editorKey = ref(0)
+const vditorReady = ref(false)
 const aiPreview = ref('')
 const vditorRef = ref(null)
 const vditorPreviewRef = ref(null)
@@ -414,19 +418,33 @@ async function initVditor() {
   editorKey.value++
   await nextTick(); await nextTick()
   if (!vditorRef.value) return
+  // F5 後第一次載入，Vditor 的 CSS / SVG icon sprite 可能尚未完全套用，
+  // 用 rAF + setTimeout(0) 等瀏覽器完成當前 paint cycle 後再初始化，
+  // 避免工具列 icon 渲染異常；SPA 內導航因資源已快取不受影響。
+  await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)))
+  if (!vditorRef.value) return
   const initialContent = form.content || ''
-  vditorInstance = new Vditor(vditorRef.value, {
+  // Vditor 非同步 fetch SVG icon sprite，after() 在所有資源載完後才觸發。
+  // await after() 可確保工具列圖示完全就緒後 Vue 才繼續，修復 F5 第一次進入圖示異常。
+  await new Promise(resolve => {
+    vditorInstance = new Vditor(vditorRef.value, {
     height: 520, mode: 'ir',
     placeholder: '使用 Markdown 撰寫文章內容...',
     toolbarConfig: { pin: true },
     cache: { enable: false },
-    after() { vditorInstance?.setValue(initialContent) },
+    after() {
+    vditorInstance?.setValue(initialContent)
+    vditorReady.value = true
+      resolve()
+      },
     input(val) { form.content = val },
     upload: { url: '/api/articles/upload-image', headers: { Authorization: `Bearer ${sessionStorage.getItem('kb_token')}` }, fieldName: 'image' },
+    })
   })
 }
 function destroyVditor() {
   if (vditorInstance) { try { vditorInstance.destroy() } catch { } vditorInstance = null }
+  vditorReady.value = false
 }
 async function renderPreview() {
   await nextTick()
@@ -604,8 +622,16 @@ watch(() => [props.mode, props.id, route.query.version], async ([newMode, newId,
 .mr-1 { margin-right: 4px; } .mb-1 { margin-bottom: 4px; }
 .text-muted { color: var(--color-text-muted,#999); font-size: 12px; font-style: italic; }
 .d-block { display: block; }
-.editor-container { min-height: 520px; overflow: hidden; padding: 0; }
+.editor-container { min-height: 520px; overflow: hidden; padding: 0; position: relative; }
 .vditor-host { width: 100%; }
+.vditor-loading-mask {
+  position: absolute;
+  inset: 0;
+  background: var(--color-surface, #fff);
+  z-index: 10;
+  padding: 20px 24px;
+  border-radius: inherit;
+}
 .markdown-body { padding: 28px 32px; line-height: 1.8; font-size: 14px; }
 :deep(.markdown-body h1) { font-size: 22px; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 16px; }
 :deep(.markdown-body h2) { font-size: 18px; margin: 20px 0 10px; }

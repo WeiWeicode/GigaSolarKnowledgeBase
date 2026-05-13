@@ -27,10 +27,10 @@
             </el-check-tag>
           </div>
         </div>
-        <el-button type="success" size="large" class="ai-btn" @click="aiPanelVisible = true">
-          <el-icon><ChatDotRound /></el-icon>
-          AI 模式
-        </el-button>
+        <div class="ai-badge" @click="aiPanelVisible = true">
+          <el-icon><MagicStick /></el-icon>
+          <span>AI 模式</span>
+        </div>
       </div>
 
       <!-- Search results -->
@@ -231,14 +231,24 @@ onMounted(async () => {
   border-radius: 20px;
 }
 
-.ai-btn {
-  height: 44px;
-  font-size: 14px;
-  font-weight: 600;
-  padding: 0 20px;
-  border-radius: var(--border-radius);
-  flex-shrink: 0;
+.ai-badge {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform .15s, box-shadow .15s;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, .3);
+}
+.ai-badge:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(124, 58, 237, .4);
 }
 
 /* Search results */
