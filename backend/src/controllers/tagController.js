@@ -46,7 +46,29 @@ async function createTag(req, res) {
   }
 }
 
+/**
+ * 刪除標籤
+ * DELETE /api/v1/tags/:id
+ */
+async function deleteTag(req, res) {
+  try {
+    const { id } = req.params;
+
+    const tag = await Tag.findByPk(id);
+    if (!tag) {
+      return res.status(404).json({ success: false, message: '標籤不存在' });
+    }
+
+    await tag.destroy();
+    return res.json({ success: true, message: '標籤已刪除' });
+  } catch (error) {
+    console.error('deleteTag error:', error.message);
+    return res.status(500).json({ success: false, message: '刪除標籤失敗' });
+  }
+}
+
 module.exports = {
   getAllTags,
   createTag,
+  deleteTag,
 };

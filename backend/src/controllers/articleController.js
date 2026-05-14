@@ -27,6 +27,23 @@ async function getAllArticles(req, res) {
       return canAccess(req.user, article);
     });
 
+    // B-03: 批次查詢每篇文章的 directoryIds（該文章所在目錄的 parent_id）
+    const articleIds = filtered.map(a => a.id);
+    const allDirNodes = articleIds.length
+      ? await Directory.findAll({
+          where: { article_id: articleIds, type: 'article' },
+          attributes: ['article_id', 'parent_id'],
+        })
+      : [];
+
+    const dirMap = {};
+    allDirNodes.forEach(d => {
+      if (!dirMap[d.article_id]) dirMap[d.article_id] = [];
+      dirMap[d.article_id].push(d.parent_id);
+    });
+
+    filtered.forEach(a => a.setDataValue('directoryIds', dirMap[a.id] || []));
+
     return res.json({ success: true, data: filtered });
   } catch (error) {
     console.error('getAllArticles error:', error.message);
@@ -64,6 +81,13 @@ async function getArticleById(req, res) {
         article.setDataValue('requested_version', Number(version));
       }
     }
+
+    // B-03: 補上該文章所在目錄的 parent_id 陣列
+    const dirNodes = await Directory.findAll({
+      where: { article_id: id, type: 'article' },
+      attributes: ['parent_id'],
+    });
+    article.setDataValue('directoryIds', dirNodes.map(d => d.parent_id));
 
     return res.json({ success: true, data: article });
   } catch (error) {
@@ -127,7 +151,7 @@ async function createArticle(req, res) {
       updated_by_name: req.user.員工姓名,
     }, { transaction: t });
 
-    // ── FIX T-31：建立時即儲存版本 1 快照 ──────────────────────
+    // FIX T-31：建立時即儲存版本 1 快照
     await ArticleVersionHistory.create({
       article_id:     article.id,
       version_number: 1,
@@ -205,22 +229,19 @@ async function updateArticle(req, res) {
       return res.status(403).json({ success: false, message: '您無權修改此文章' });
     }
 
-    // ── FIX T-31：版本快照邏輯修正 ──────────────────────────────
-    // 「現在」的 version_number 是目前這個版本的編號
-    // 將舊內容 + 舊版本號存入歷史，讓 version 1 的快照對應到 v1 的內容
+    // FIX T-31：版本快照邏輯
     const currentVersion = article.version_number;
     const nextVersion    = currentVersion + 1;
 
     await ArticleVersionHistory.create({
       article_id:     article.id,
-      version_number: currentVersion,          // ← 舊版本號
-      content:        article.content,         // ← 舊內容（更新前快照）
+      version_number: currentVersion,
+      content:        article.content,
       diff_summary:   changeNote || '更新內容',
       editor_id:      req.user.員工工號,
       editor_name:    req.user.員工姓名,
     }, { transaction: t });
 
-    // 更新主表為新版本號 + 新內容
     await article.update({
       title,
       content,
@@ -229,17 +250,15 @@ async function updateArticle(req, res) {
       access_dept:   accessDept,
       access_members: Array.isArray(accessMembers) ? JSON.stringify(accessMembers) : accessMembers,
       access_level:  accessLevel,
-      version_number: nextVersion,             // ← 遞增
+      version_number: nextVersion,
       updated_by:    req.user.員工工號,
       updated_by_name: req.user.員工姓名,
     }, { transaction: t });
 
-    // 標籤
     if (tagIds) {
       await article.setTags(tagIds, { transaction: t });
     }
 
-    // 編輯者
     if (editorAccounts) {
       await ArticleEditor.destroy({ where: { article_id: id }, transaction: t });
       await ArticleEditor.bulkCreate(
@@ -248,16 +267,52 @@ async function updateArticle(req, res) {
       );
     }
 
-    // 附件關聯
     if (attachmentIds) {
       await article.setAttachments(attachmentIds, { transaction: t });
     }
 
-    // 目錄捷徑節點同步
+    // B-03: 同步目錄捷徑節點
+    // 先更新既有節點的 label / is_public
     await Directory.update(
       { label: title, is_public: isPublic },
       { where: { article_id: id }, transaction: t }
     );
+
+    // 若 directoryIds 有傳入，同步新增/移除目錄節點
+    if (directoryIds) {
+      const existingNodes = await Directory.findAll({
+        where: { article_id: id, type: 'article' },
+        attributes: ['id', 'parent_id'],
+        transaction: t,
+      });
+      const existingParentIds = existingNodes.map(n => n.parent_id);
+
+      // 新增不存在的目錄節點
+      const toAdd = directoryIds.filter(pid => !existingParentIds.includes(pid));
+      if (toAdd.length > 0) {
+        await Directory.bulkCreate(
+          toAdd.map(dirId => ({
+            id:         `art-${id}-${dirId}`,
+            parent_id:  dirId,
+            type:       'article',
+            label:      title,
+            article_id: id,
+            is_public:  isPublic,
+            sort_order: 999,
+          })),
+          { transaction: t, ignoreDuplicates: true }
+        );
+      }
+
+      // 移除已取消勾選的目錄節點
+      const toRemove = existingParentIds.filter(pid => !directoryIds.includes(pid));
+      if (toRemove.length > 0) {
+        await Directory.destroy({
+          where: { article_id: id, type: 'article', parent_id: toRemove },
+          transaction: t,
+        });
+      }
+    }
 
     await t.commit();
     return res.json({ success: true, data: article });

@@ -410,19 +410,15 @@ const dirPickerTree = computed(() => {
   return filterDirs(dirStore.filteredTree)
 })
 const filteredArticles = computed(() => {
-  if (!dirStore.tree) return []
-  function findDeptNode(nodes) { for (const n of nodes) { if (n.type === 'department' && n.部門代碼 === dirStore.currentDept) return n; if (n.children) { const f = findDeptNode(n.children); if (f) return f } } return null }
-  const deptNode = findDeptNode(dirStore.tree)
-  if (!deptNode) return []
-  const validDirIds = new Set()
-  function collectDirs(nodes) { for (const n of nodes) { if (n.type === 'directory') { validDirIds.add(n.id); if (n.children) collectDirs(n.children) } } }
-  if (deptNode.children) collectDirs(deptNode.children)
-  return allArticles.value.filter(art => art.directories.some(d => validDirIds.has(d)) && !art.directories.some(d => String(d).includes('trash')) && art.isPublished !== false)
+  // 後端 Article 目前不回傳 directoryIds（B-03），暗時顯示所有已上架文章
+  // TODO：待 B-03 補充後可恢復目錄範圍過濾
+  return allArticles.value.filter(art => art.isPublished !== false)
 })
 const canEdit = computed(() => {
   if (dirStore.viewScope === 'public' || !attachment.value) return false
   if (auth.isAdmin || auth.isManager) return true
-  return attachment.value.editorIds?.includes(auth.user?.員工工號) || attachment.value.createdBy?.員工工號 === auth.user?.員工工號
+  return attachment.value.editors?.includes(auth.user?.員工工號)
+      || attachment.value.createdBy === auth.user?.員工工號
 })
 const latestVersionNumber = computed(() => attachment.value?.versionNumber || 1)
 
@@ -457,8 +453,10 @@ function isArticleAccessible(id) {
   if (!art) return false
   const isPublic = art.isPublic === true
   if (dirStore.viewScope === 'public' && !isPublic) return false
-  const ha = art.hasAccess || {}
-  return (isPublic || !ha.部門 || ha.部門 === auth.user?.部門代碼) && (isPublic || !ha.人員?.length || ha.人員.includes(auth.user?.員工工號)) && (!ha.職級 || (auth.user?.級職 || 99) <= ha.職級)
+  const members = Array.isArray(art.accessMembers) ? art.accessMembers : []
+  return (isPublic || !art.accessDept || art.accessDept === auth.user?.部門代碼)
+      && (isPublic || !members.length || members.includes(auth.user?.員工工號))
+      && (!art.accessLevel || (auth.user?.級職 ?? 99) <= art.accessLevel)
 }
 watch(showEditorPicker, v => { if (v) tempEditors.value = [...form.editorIds] })
 function confirmEditorSelection() { form.editorIds = [...tempEditors.value]; showEditorPicker.value = false }
@@ -473,6 +471,25 @@ watch(() => form.isPublished, (val) => {
 })
 function findTrashNode(nodes) { if (!nodes) return null; for (const n of nodes) { if (n.type === 'trash') return n; if (n.children) { const f = findTrashNode(n.children); if (f) return f } } return null }
 
+// ─── 將 form 轉換為後端 payload ──────────────────────────────────
+function buildPayload(extraFiles = []) {
+  return {
+    title:          form.title,
+    description:    form.description,
+    isPublished:    form.isPublished,
+    isPublic:       form.isPublic,
+    accessDept:     form.hasAccess.部門,
+    accessMembers:  form.hasAccess.人員,
+    accessLevel:    form.hasAccess.職級,
+    tagIds:         form.tagIds,
+    editorAccounts: form.editorIds,
+    linkedArticleIds: form.linkedArticleIds,
+    directoryIds:   form.directories,
+    changeNote:     form.changeNote,
+    files:          extraFiles,
+  }
+}
+
 async function saveAttachment() {
   if (!form.title.trim()) return ElMessage.warning('請輸入附件標題')
   if (!form.directories.length) return ElMessage.warning('請選擇所屬目錄')
@@ -483,7 +500,8 @@ async function saveAttachment() {
       const raws = fileList.value.filter(f => f.raw).map(f => f.raw)
       if (raws.length) newFiles = await attachmentService.uploadFiles(raws)
     }
-    await attachmentService.update(props.id, { ...form, files: [...(attachment.value?.files || []), ...newFiles] })
+    const existingFiles = attachment.value?.files || []
+    await attachmentService.update(props.id, buildPayload([...existingFiles, ...newFiles]))
     ElMessage.success('已儲存')
     form.changeNote = ''
     isEditing.value = false
@@ -503,7 +521,7 @@ async function createAttachment() {
       const raws = fileList.value.filter(f => f.raw).map(f => f.raw)
       if (raws.length) uploadedFiles = await attachmentService.uploadFiles(raws)
     }
-    const created = await attachmentService.create({ ...form, files: uploadedFiles })
+    const created = await attachmentService.create(buildPayload(uploadedFiles))
     ElMessage.success('附件建立成功')
     await dirStore.fetchTree(dirStore.currentCompany, dirStore.currentDept)
     router.push(`/attachment/${created.id}`)
@@ -514,28 +532,50 @@ async function loadAttachment() {
   if (!props.id) return
   loading.value = true
   try {
-    attachment.value = await attachmentService.getById(props.id)
-    const ha = attachment.value.hasAccess || {}
+    const res = await attachmentService.getById(props.id)
+    attachment.value = res
     if (!auth.isAdmin) {
-      const isPublic = attachment.value.isPublic === true
+      const isPublic = res.isPublic === true
+      const members  = Array.isArray(res.accessMembers) ? res.accessMembers : []
       if (dirStore.viewScope === 'public' && !isPublic) { accessDenied.value = true; return }
-      if (!((isPublic || !ha.部門 || ha.部門 === auth.user?.部門代碼) && (isPublic || !ha.人員?.length || ha.人員.includes(auth.user?.員工工號)) && (!ha.職級 || (auth.user?.級職 || 99) <= ha.職級))) { accessDenied.value = true; return }
+      if (!((isPublic || !res.accessDept || res.accessDept === auth.user?.部門代碼)
+          && (isPublic || !members.length || members.includes(auth.user?.員工工號))
+          && (!res.accessLevel || (auth.user?.級職 ?? 99) <= res.accessLevel))) {
+        accessDenied.value = true; return
+      }
     }
     accessDenied.value = false
     Object.assign(form, {
-      title: attachment.value.title || '', description: attachment.value.description || '',
-      changeNote: '',
-      isPublished: attachment.value.isPublished ?? true, isPublic: attachment.value.isPublic ?? false,
-      directories: [...(attachment.value.directories || [])], tagIds: attachment.value.tags?.map(t => t.id) || [],
-      linkedArticleIds: [...(attachment.value.linkedArticleIds || [])], editorIds: [...(attachment.value.editorIds || [])],
-      hasAccess: { 部門: ha.部門 || auth.user?.部門代碼 || '', 人員: [...(ha.人員 || [])], 職級: ha.職級 ?? 10 },
+      title:        res.title || '',
+      description:  res.description || '',
+      changeNote:   '',
+      isPublished:  res.isPublished ?? true,
+      isPublic:     res.isPublic ?? false,
+      // directoryIds 待後端補充（B-03）
+      directories:  res.directoryIds || [],
+      tagIds:       res.tags?.map(t => t.id) || [],
+      linkedArticleIds: res.linkedArticleIds || [],
+      editorIds:    res.editors || [],
+      hasAccess: {
+        部門: res.accessDept || auth.user?.部門代碼 || '',
+        人員: [...(Array.isArray(res.accessMembers) ? res.accessMembers : [])],
+        職級: res.accessLevel ?? 10,
+      },
     })
   } catch { ElMessage.error('附件不存在或無權限'); router.push('/home') }
   finally { loading.value = false }
 }
 
 onMounted(async () => {
-  ;[tags.value, colleagues.value, allArticles.value] = await Promise.all([tagService.getAll(), colleagueService.getAll(), articleService.getAll()])
+  try {
+    ;[tags.value, colleagues.value, allArticles.value] = await Promise.all([
+      tagService.getAll(),
+      colleagueService.getAll(),
+      articleService.getAll(),
+    ])
+  } catch {
+    // 輔助資料載入失敗不阻斷主要功能
+  }
   if (props.mode !== 'create') await loadAttachment()
 })
 

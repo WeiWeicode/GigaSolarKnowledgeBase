@@ -5,6 +5,7 @@
  */
 const mssql = require('mssql');
 const { getNaNaPool } = require('../config/db');
+const { UserRole } = require('../models');
 
 // ── 完整員工查詢 SQL（含組織、部門、主管）──────────────────
 // 直接取自 04_DB_SCHEMA.md §1.2，只在 WHERE 後追加篩選條件
@@ -71,7 +72,8 @@ const BASE_EMPLOYEE_SQL = `
  */
 function rowToUser(row) {
   // 角色推導：級職 < 6 → MANAGER，其餘 → MEMBER
-  const role = row.職級 != null && row.職級 < 6 ? 'MANAGER' : 'MEMBER';
+  // 測試先用9
+  const role = row.職級 != null && row.職級 < 9 ? 'MANAGER' : 'MEMBER';
 
   return {
     組織名稱:     row.組織名稱     || '',
@@ -107,7 +109,21 @@ async function getUserByAccount(account) {
 
     if (result.recordset.length === 0) return null;
 
-    return rowToUser(result.recordset[0]);
+    const user = rowToUser(result.recordset[0]);
+
+    // 查 KB DB user_roles 角色覆寫（B-01）
+    // 若在 user_roles 表中有記錄，則覆寫 NaNa 依職級推導的 role
+    try {
+      const override = await UserRole.findOne({ where: { account } });
+      if (override) {
+        user.role = override.role;
+      }
+    } catch (roleErr) {
+      // 覆寫查詢失敗不阻斷登入，使用 NaNa 推導的預設 role
+      console.warn('UserRole override query failed, using default role:', roleErr.message);
+    }
+
+    return user;
   } catch (error) {
     console.error('nanaService.getUserByAccount error:', error.message);
     throw error;

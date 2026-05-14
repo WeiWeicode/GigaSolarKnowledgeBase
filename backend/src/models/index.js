@@ -11,7 +11,8 @@ const AttachmentVersionHistory = require('./AttachmentVersionHistory');
 const Directory                = require('./Directory');
 const Comment                  = require('./Comment');
 const Notification             = require('./Notification');
-const UserToken                = require('./UserToken');
+const UserToken  = require('./UserToken');
+const UserRole   = require('./UserRole');
 
 // ── 中間表 Model（定義在此，不另開檔案）─────────────────────
 
@@ -129,4 +130,5 @@ module.exports = {
   CommentRead,
   Notification,
   UserToken,
+  UserRole,
 };

@@ -128,6 +128,7 @@ import { useNotificationStore } from '@/store/notification.js'
 import { articleService, tagService } from '@/services/api.js'
 import { timeAgo, formatDateTime } from '@/utils/dateFormat.js'
 import AiChatPanel from '@/components/panels/AiChatPanel.vue'
+import { ElMessage } from 'element-plus'
 
 const router = useRouter()
 const notifStore = useNotificationStore()
@@ -155,13 +156,20 @@ function onSearch() {
   clearTimeout(searchTimer)
   if (!keyword.value.trim() && selectedTags.value.length === 0) {
     hasSearched.value = false
+    searchResults.value = []
     return
   }
   hasSearched.value = true
   searchLoading.value = true
   searchTimer = setTimeout(async () => {
-    searchResults.value = await articleService.search(keyword.value, selectedTags.value)
-    searchLoading.value = false
+    try {
+      searchResults.value = await articleService.search(keyword.value, selectedTags.value)
+    } catch (e) {
+      searchResults.value = []
+      ElMessage.error('搜尋失敗，請稍後再試')
+    } finally {
+      searchLoading.value = false
+    }
   }, 300)
 }
 
@@ -174,8 +182,16 @@ async function markRead(id) {
 }
 
 onMounted(async () => {
-  tags.value = await tagService.getAll()
-  await notifStore.fetchAll()
+  try {
+    tags.value = await tagService.getAll()
+  } catch {
+    // 標籤載入失敗不影響主要功能，靜默失敗
+  }
+  try {
+    await notifStore.fetchAll()
+  } catch {
+    // 通知載入失敗不影響頁面，靜默失敗
+  }
 })
 </script>
 

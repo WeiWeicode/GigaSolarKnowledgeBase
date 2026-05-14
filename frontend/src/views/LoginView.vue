@@ -5,42 +5,17 @@
       <h1 class="login-title">集團知識庫</h1>
       <p class="login-subtitle">GigaSolar Knowledge Base</p>
 
-      <el-form
-        ref="formRef"
-        :model="form"
-        :rules="rules"
-        label-position="top"
-        class="login-form"
-        @submit.prevent="handleLogin"
-      >
+      <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="login-form"
+        @submit.prevent="handleLogin">
         <el-form-item label="員工工號" prop="employeeId">
-          <el-input
-            v-model="form.employeeId"
-            placeholder="請輸入員工工號"
-            size="large"
-            prefix-icon="User"
-            :disabled="loading"
-          />
+          <el-input v-model="form.employeeId" placeholder="請輸入員工工號" size="large" prefix-icon="User"
+            :disabled="loading" />
         </el-form-item>
         <el-form-item label="密碼" prop="password">
-          <el-input
-            v-model="form.password"
-            type="password"
-            placeholder="請輸入密碼"
-            size="large"
-            prefix-icon="Lock"
-            show-password
-            :disabled="loading"
-            @keyup.enter="handleLogin"
-          />
+          <el-input v-model="form.password" type="password" placeholder="請輸入密碼" size="large" prefix-icon="Lock"
+            show-password :disabled="loading" @keyup.enter="handleLogin" />
         </el-form-item>
-        <el-button
-          type="primary"
-          size="large"
-          :loading="loading"
-          class="login-btn"
-          @click="handleLogin"
-        >
+        <el-button type="primary" size="large" :loading="loading" class="login-btn" @click="handleLogin">
           登入
         </el-button>
       </el-form>
@@ -62,10 +37,10 @@ const auth = useAuthStore()
 const formRef = ref()
 const loading = ref(false)
 
-const form = reactive({ employeeId: 'GV112001', password: 'demo' })
+const form = reactive({ employeeId: '', password: '' })
 const rules = {
   employeeId: [{ required: true, message: '請輸入員工工號', trigger: 'blur' }],
-  password:   [{ required: true, message: '請輸入密碼', trigger: 'blur' }],
+  password: [{ required: true, message: '請輸入密碼', trigger: 'blur' }],
 }
 
 async function handleLogin() {

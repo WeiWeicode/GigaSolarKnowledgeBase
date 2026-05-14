@@ -390,25 +390,17 @@ const dirPickerTree = computed(() => {
   return filterDirs(dirStore.filteredTree)
 })
 const filteredAttachments = computed(() => {
-  if (!dirStore.tree) return []
-  function findDeptNode(nodes) {
-    for (const n of nodes) {
-      if (n.type === 'department' && n.部門代碼 === dirStore.currentDept) return n
-      if (n.children) { const f = findDeptNode(n.children); if (f) return f }
-    }
-    return null
-  }
-  const deptNode = findDeptNode(dirStore.tree)
-  if (!deptNode) return []
-  const validDirIds = new Set()
-  function collectDirs(nodes) { for (const n of nodes) { if (n.type === 'directory') { validDirIds.add(n.id); if (n.children) collectDirs(n.children) } } }
-  if (deptNode.children) collectDirs(deptNode.children)
-  return allAttachments.value.filter(att => att.directories.some(d => validDirIds.has(d)) && !att.directories.some(d => String(d).includes('trash')) && att.isPublished !== false)
+  // 後端 Attachment 不回傳 directories，直接顯示所有可存取的附件
+  // TODO：待 B-03 後端補充 directoryIds 後，可再恙復目錄範圍過濾
+  return allAttachments.value.filter(att => att.isPublished !== false)
 })
 const canEdit = computed(() => {
   if (dirStore.viewScope === 'public' || !article.value || route.query.version) return false
   if (auth.isAdmin || auth.isManager) return true
-  return article.value.editorIds?.includes(auth.user?.員工工號) || article.value.createdBy?.員工工號 === auth.user?.員工工號
+  // editors: string[] of accounts (after normalizeArticle)
+  // createdBy: string account (after normalizeArticle)
+  return article.value.editors?.includes(auth.user?.員工工號)
+      || article.value.createdBy === auth.user?.員工工號
 })
 const latestVersionNumber = computed(() => article.value?.versionNumber || 1)
 
@@ -456,13 +448,31 @@ async function renderPreview() {
 function startEdit() { isEditing.value = true; initVditor() }
 function cancelEdit() { destroyVditor(); isEditing.value = false; nextTick(() => renderPreview()) }
 
+// ─── 將 form 轉換為後端所需 payload ──────────────────────────────────
+function buildPayload() {
+  if (vditorInstance) form.content = vditorInstance.getValue()
+  return {
+    title:          form.title,
+    content:        form.content,
+    isPublished:    form.isPublished,
+    isPublic:       form.isPublic,
+    accessDept:     form.hasAccess.部門,
+    accessMembers:  form.hasAccess.人員,
+    accessLevel:    form.hasAccess.職級,
+    tagIds:         form.tagIds,
+    editorAccounts: form.editorIds,
+    attachmentIds:  form.attachmentIds,
+    directoryIds:   form.directories,
+    changeNote:     form.changeNote,
+  }
+}
+
 async function saveArticle() {
   if (!form.title.trim()) return ElMessage.warning('請輸入文章標題')
   if (!form.directories.length) return ElMessage.warning('請選擇所屬目錄')
   saving.value = true
   try {
-    if (vditorInstance) form.content = vditorInstance.getValue()
-    await articleService.update(props.id, { ...form })
+    await articleService.update(props.id, buildPayload())
     ElMessage.success('已儲存')
     form.changeNote = ''
     isEditing.value = false
@@ -478,8 +488,7 @@ async function createArticle() {
   if (!form.directories.length) return ElMessage.warning('請選擇所屬目錄')
   saving.value = true
   try {
-    if (vditorInstance) form.content = vditorInstance.getValue()
-    const created = await articleService.create({ ...form })
+    const created = await articleService.create(buildPayload())
     ElMessage.success('文章建立成功')
     await dirStore.fetchTree(dirStore.currentCompany, dirStore.currentDept)
     router.push(`/article/${created.id}`)
@@ -506,7 +515,11 @@ function getDirLabel(id) {
 }
 function handleAttachSelection(sel) { tempAttachSelection.value = sel }
 function confirmAttachSelection() { form.attachmentIds = tempAttachSelection.value.map(a => a.id); showAttachPicker.value = false }
-function getAttachmentName(id) { return allAttachments.value.find(a => a.id === id)?.files?.[0]?.name || String(id) }
+function getAttachmentName(id) {
+  const att = allAttachments.value.find(a => a.id === id)
+  // getAll 不包含 files，用 title 作為顏示名稱
+  return att?.title || att?.files?.[0]?.name || String(id)
+}
 function isAttachmentAccessible(id) {
   if (auth.isAdmin) return true
   const att = allAttachments.value.find(a => a.id === id)
@@ -542,24 +555,34 @@ async function loadArticle() {
     const res = await articleService.getById(props.id, route.query.version || null)
     article.value = res
     if (!auth.isAdmin) {
-      const ha = res.hasAccess || {}
-      const isPublic = res.isPublic === true
+      const isPublic  = res.isPublic === true
+      const members   = Array.isArray(res.accessMembers) ? res.accessMembers : []
       if (dirStore.viewScope === 'public' && !isPublic) { accessDenied.value = true; return }
-      if (!((isPublic || !ha.部門 || ha.部門 === auth.user?.部門代碼)
-          && (isPublic || !ha.人員?.length || ha.人員.includes(auth.user?.員工工號))
-          && (!ha.職級 || (auth.user?.級職 || 99) <= ha.職級))) { accessDenied.value = true; return }
+      if (!((isPublic || !res.accessDept || res.accessDept === auth.user?.部門代碼)
+          && (isPublic || !members.length || members.includes(auth.user?.員工工號))
+          && (!res.accessLevel || (auth.user?.級職 ?? 99) <= res.accessLevel))) {
+        accessDenied.value = true; return
+      }
     }
     accessDenied.value = false
-    const ha = res.hasAccess || {}
     Object.assign(form, {
-      title: res.title || '', content: res.content || '',
-      isPublished: res.isPublished ?? true, isPublic: res.isPublic ?? false,
-      directories: res.directories || [], tagIds: res.tags?.map(t => t.id) || [],
-      attachmentIds: res.attachmentIds || [], editorIds: res.editorIds || [],
-      changeNote: '',
-      hasAccess: { 部門: ha.部門 || auth.user?.部門代碼 || '', 人員: [...(ha.人員 || [])], 職級: ha.職級 ?? 10 },
+      title:        res.title || '',
+      content:      res.content || '',
+      isPublished:  res.isPublished ?? true,
+      isPublic:     res.isPublic ?? false,
+      // directoryIds 待後端補充（B-03），暫時用空陣列
+      directories:  res.directoryIds || [],
+      tagIds:       res.tags?.map(t => t.id) || [],
+      attachmentIds: res.attachmentIds || [],
+      editorIds:    res.editors || [],
+      changeNote:   '',
+      hasAccess: {
+        部門: res.accessDept || auth.user?.部門代碼 || '',
+        人員: [...(Array.isArray(res.accessMembers) ? res.accessMembers : [])],
+        職級: res.accessLevel ?? 10,
+      },
     })
-  } catch (err) { ElMessage.error('無法載入文章：' + err.message) }
+  } catch (err) { ElMessage.error('無法載入文章：' + (err.message || '')) }
   finally { loading.value = false }
 }
 
@@ -572,7 +595,15 @@ function startDraftTimer() {
 }
 
 onMounted(async () => {
-  ;[tags.value, colleagues.value, allAttachments.value] = await Promise.all([tagService.getAll(), colleagueService.getAll(), attachmentService.getAll()])
+  try {
+    ;[tags.value, colleagues.value, allAttachments.value] = await Promise.all([
+      tagService.getAll(),
+      colleagueService.getAll(),
+      attachmentService.getAll(),
+    ])
+  } catch {
+    // 輔助資料載入失敗不阻斷主要功能
+  }
   if (props.mode === 'create') { await initVditor() }
   else { await loadArticle(); if (isEditing.value) await initVditor(); else await renderPreview() }
   startDraftTimer()

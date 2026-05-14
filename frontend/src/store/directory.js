@@ -29,7 +29,7 @@ export const useDirectoryStore = defineStore('directory', () => {
       return newNode
     }).filter(node => {
       if (node.type === 'department') {
-        return node.部門代碼 === deptCode
+        return node.dept_code === deptCode
       }
       return true
     })
@@ -44,7 +44,7 @@ export const useDirectoryStore = defineStore('directory', () => {
       return newNode
     }).filter(node => {
       if (node.type === 'article' || node.type === 'attachment') {
-        return node.isPublic === true
+        return node.is_public === true
       }
       if (['directory', 'department', 'company'].includes(node.type)) {
         return node.children && node.children.length > 0

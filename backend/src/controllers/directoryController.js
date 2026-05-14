@@ -179,9 +179,42 @@ async function recalcSortOrder(parentId) {
   }
 }
 
+/**
+ * 刪除目錄節點（僅允許空的 directory 類型）
+ * DELETE /api/v1/directories/:id
+ */
+async function deleteNode(req, res) {
+  try {
+    const { id } = req.params;
+
+    const node = await Directory.findByPk(id);
+    if (!node) {
+      return res.status(404).json({ success: false, message: '節點不存在' });
+    }
+    if (node.type !== 'directory') {
+      return res.status(400).json({ success: false, message: '只能刪除 directory 類型節點' });
+    }
+
+    const children = await Directory.findAll({ where: { parent_id: id } });
+    if (children.length > 0) {
+      return res.status(400).json({ success: false, message: '目錄內還有子節點，請先清空' });
+    }
+
+    const parentId = node.parent_id;
+    await node.destroy();
+    await recalcSortOrder(parentId);
+
+    return res.json({ success: true, message: '目錄已刪除' });
+  } catch (error) {
+    console.error('deleteNode error:', error.message);
+    return res.status(500).json({ success: false, message: '刪除目錄失敗' });
+  }
+}
+
 module.exports = {
   getTree,
   createNode,
   renameNode,
   moveNode,
+  deleteNode,
 };

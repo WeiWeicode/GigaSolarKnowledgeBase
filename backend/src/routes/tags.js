@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const tagController = require('../controllers/tagController');
-const { authMiddleware } = require('../middlewares/auth');
+const { authMiddleware, requireRole } = require('../middlewares/auth');
 
 // 所有標籤路由均需登入
 router.use(authMiddleware);
@@ -19,5 +19,12 @@ router.get('/', tagController.getAllTags);
  * @access Private
  */
 router.post('/', tagController.createTag);
+
+/**
+ * @route DELETE /api/v1/tags/:id
+ * @desc  刪除標籤（僅 MANAGER / ADMIN）
+ * @access Private (MANAGER+)
+ */
+router.delete('/:id', requireRole('MANAGER', 'ADMIN'), tagController.deleteTag);
 
 module.exports = router;

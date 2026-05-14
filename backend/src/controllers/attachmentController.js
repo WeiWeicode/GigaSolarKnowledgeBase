@@ -3,7 +3,7 @@
  */
 const {
   Attachment, AttachmentFile, Tag, AttachmentEditor,
-  AttachmentVersionHistory, Directory, sequelize
+  AttachmentVersionHistory, Directory, Article, sequelize
 } = require('../models');
 const { canAccess } = require('../helpers/accessHelper');
 const { v4: uuidv4 } = require('uuid');
@@ -13,8 +13,11 @@ async function getAllAttachments(req, res) {
   try {
     const attachments = await Attachment.findAll({
       include: [
-        { model: Tag,              through: { attributes: [] }, as: 'Tags' },
+        { model: Tag,            through: { attributes: [] }, as: 'Tags' },
         { model: AttachmentEditor, attributes: ['editor_account'], as: 'Editors' },
+        // B-04: 列表帶第一個檔案的名稱，供前端選取附件時顯示
+        { model: AttachmentFile, attributes: ['name', 'uuid'], limit: 1, as: 'Files',
+          order: [['id', 'ASC']] },
       ],
       order: [['updated_at', 'DESC']],
     });
@@ -26,6 +29,23 @@ async function getAllAttachments(req, res) {
       }
       return canAccess(req.user, att);
     });
+
+    // B-03: 批次查詢每個附件包的 directoryIds
+    const attIds = filtered.map(a => a.id);
+    const allDirNodes = attIds.length
+      ? await Directory.findAll({
+          where: { attachment_id: attIds, type: 'attachment' },
+          attributes: ['attachment_id', 'parent_id'],
+        })
+      : [];
+
+    const dirMap = {};
+    allDirNodes.forEach(d => {
+      if (!dirMap[d.attachment_id]) dirMap[d.attachment_id] = [];
+      dirMap[d.attachment_id].push(d.parent_id);
+    });
+
+    filtered.forEach(a => a.setDataValue('directoryIds', dirMap[a.id] || []));
 
     return res.json({ success: true, data: filtered });
   } catch (error) {
@@ -40,8 +60,8 @@ async function getAttachmentById(req, res) {
     const { id } = req.params;
     const attachment = await Attachment.findByPk(id, {
       include: [
-        { model: AttachmentFile,   as: 'Files' },
-        { model: Tag,              through: { attributes: [] }, as: 'Tags' },
+        { model: AttachmentFile, as: 'Files' },
+        { model: Tag,            through: { attributes: [] }, as: 'Tags' },
         { model: AttachmentEditor, attributes: ['editor_account'], as: 'Editors' },
       ],
     });
@@ -52,6 +72,17 @@ async function getAttachmentById(req, res) {
     if (!canAccess(req.user, attachment)) {
       return res.status(403).json({ success: false, message: '您無權存取此附件' });
     }
+
+    // B-03: 補上所在目錄的 parent_id 陣列
+    const dirNodes = await Directory.findAll({
+      where: { attachment_id: id, type: 'attachment' },
+      attributes: ['parent_id'],
+    });
+    attachment.setDataValue('directoryIds', dirNodes.map(d => d.parent_id));
+
+    // 補上關聯文章 id 陣列
+    const linkedArticles = await attachment.getArticles({ attributes: ['id'] });
+    attachment.setDataValue('linkedArticleIds', linkedArticles.map(a => a.id));
 
     return res.json({ success: true, data: attachment });
   } catch (error) {
@@ -90,9 +121,13 @@ async function createAttachment(req, res) {
     const {
       title, description, isPublished, isPublic,
       accessDept, accessMembers, accessLevel,
-      tagIds, editorAccounts, articleIds,
+      tagIds, editorAccounts,
+      // 前端傳 linkedArticleIds，後端接受兩種名稱
+      linkedArticleIds, articleIds,
       files, directoryIds,
     } = req.body;
+
+    const relatedArticleIds = linkedArticleIds || articleIds || [];
 
     // 1. 建立主表
     const attachment = await Attachment.create({
@@ -131,8 +166,8 @@ async function createAttachment(req, res) {
     }
 
     // 5. 文章關聯
-    if (articleIds?.length > 0) {
-      await attachment.setArticles(articleIds, { transaction: t });
+    if (relatedArticleIds.length > 0) {
+      await attachment.setArticles(relatedArticleIds, { transaction: t });
     }
 
     // 6. 目錄捷徑節點
@@ -168,9 +203,12 @@ async function updateAttachment(req, res) {
     const {
       title, description, isPublished, isPublic,
       accessDept, accessMembers, accessLevel,
-      tagIds, editorAccounts, articleIds,
-      files, changeNote,
+      tagIds, editorAccounts,
+      linkedArticleIds, articleIds,
+      files, directoryIds, changeNote,
     } = req.body;
+
+    const relatedArticleIds = linkedArticleIds || articleIds || null;
 
     const attachment = await Attachment.findByPk(id, {
       include: [{ model: AttachmentEditor, as: 'Editors' }],
@@ -186,13 +224,13 @@ async function updateAttachment(req, res) {
       return res.status(403).json({ success: false, message: '您無權修改此附件' });
     }
 
-    // 1. 版本快照（儲存「目前版本號」，讓歷史記錄對應到此次更新前的狀態）
+    // 1. 版本快照
     const currentVersion = attachment.version_number;
     const nextVersion    = currentVersion + 1;
 
     await AttachmentVersionHistory.create({
       attachment_id:  attachment.id,
-      version_number: currentVersion,          // ← 目前版本號
+      version_number: currentVersion,
       diff_summary:   changeNote || '更新內容',
       editor_id:      req.user.員工工號,
       editor_name:    req.user.員工姓名,
@@ -207,24 +245,18 @@ async function updateAttachment(req, res) {
       access_dept:   accessDept,
       access_members: Array.isArray(accessMembers) ? JSON.stringify(accessMembers) : accessMembers,
       access_level:  accessLevel,
-      version_number: nextVersion,             // ← 遞增到新版本號
+      version_number: nextVersion,
       updated_by:    req.user.員工工號,
       updated_by_name: req.user.員工姓名,
     }, { transaction: t });
 
-    // 3. ── FIX T-24：只插入真正新的檔案，避免 UUID 唯一約束衝突 ──
+    // 3. FIX T-24：只插入真正新的檔案
     if (files?.length > 0) {
-      // 取得此附件包目前 DB 中所有 uuid
       const existingFiles = await AttachmentFile.findAll({
-        where:      { attachment_id: id },
-        attributes: ['uuid'],
-        transaction: t,
+        where: { attachment_id: id }, attributes: ['uuid'], transaction: t,
       });
       const existingUUIDs = new Set(existingFiles.map(f => f.uuid));
-
-      // 過濾出 uuid 不在 DB 的新檔案
       const newFiles = files.filter(f => f.uuid && !existingUUIDs.has(f.uuid));
-
       if (newFiles.length > 0) {
         await AttachmentFile.bulkCreate(
           newFiles.map(f => ({ ...f, attachment_id: id, version_number: nextVersion })),
@@ -248,15 +280,49 @@ async function updateAttachment(req, res) {
     }
 
     // 6. 文章關聯
-    if (articleIds) {
-      await attachment.setArticles(articleIds, { transaction: t });
+    if (relatedArticleIds) {
+      await attachment.setArticles(relatedArticleIds, { transaction: t });
     }
 
-    // 7. 目錄捷徑節點同步 label / is_public
+    // 7. 目錄捷徑節點同步
     await Directory.update(
       { label: title, is_public: isPublic },
       { where: { attachment_id: id }, transaction: t }
     );
+
+    // B-03: 同步新增/移除目錄節點
+    if (directoryIds) {
+      const existingNodes = await Directory.findAll({
+        where: { attachment_id: id, type: 'attachment' },
+        attributes: ['id', 'parent_id'],
+        transaction: t,
+      });
+      const existingParentIds = existingNodes.map(n => n.parent_id);
+
+      const toAdd = directoryIds.filter(pid => !existingParentIds.includes(pid));
+      if (toAdd.length > 0) {
+        await Directory.bulkCreate(
+          toAdd.map(dirId => ({
+            id:            `att-${id}-${dirId}`,
+            parent_id:     dirId,
+            type:          'attachment',
+            label:         title,
+            attachment_id: id,
+            is_public:     isPublic,
+            sort_order:    999,
+          })),
+          { transaction: t, ignoreDuplicates: true }
+        );
+      }
+
+      const toRemove = existingParentIds.filter(pid => !directoryIds.includes(pid));
+      if (toRemove.length > 0) {
+        await Directory.destroy({
+          where: { attachment_id: id, type: 'attachment', parent_id: toRemove },
+          transaction: t,
+        });
+      }
+    }
 
     await t.commit();
     return res.json({ success: true, data: attachment });

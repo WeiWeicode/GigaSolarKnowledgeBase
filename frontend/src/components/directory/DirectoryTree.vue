@@ -105,7 +105,6 @@ import { computed, ref } from 'vue'
 import { useDirectoryStore } from '@/store/directory.js'
 import { useAuthStore } from '@/store/auth.js'
 import { directoryService } from '@/services/api.js'
-import { mockArticles, mockAttachments } from '@/services/mockData.js'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -135,7 +134,7 @@ function findNodeById(nodes, id) {
 
 function findDeptNode(nodes, deptCode) {
   for (const node of nodes) {
-    if (node.type === 'department' && node.部門代碼 === deptCode) return node
+    if (node.type === 'department' && node.dept_code === deptCode) return node
     if (node.children) { const f = findDeptNode(node.children, deptCode); if (f) return f }
   }
   return null
@@ -196,14 +195,32 @@ async function onNodeDrop(draggingNode, dropNode, dropType) {
 function checkItemAccess(data) {
   if (auth.isAdmin) return true
   const user = auth.user; if (!user) return true
-  let item = null
-  if (data.type === 'article' && data.articleId)     item = mockArticles.find(a => a.id === data.articleId)
-  if (data.type === 'attachment' && data.attachmentId) item = mockAttachments.find(a => a.id === data.attachmentId)
-  if (!item?.hasAccess) return true
-  const ha = item.hasAccess, pub = item.isPublic === true
-  return (pub || !ha.部門 || ha.部門 === user.部門代碼)
-      && (pub || !ha.人員?.length || ha.人員.includes(user.員工工號))
-      && (!ha.職級 || (user.級職 || 99) <= ha.職級)
+
+  // 欄位直接從目錄樹節點讀取（後端 Directory model 上有 is_public / access_* 鏡像欄位）
+  const isPublic     = data.is_public
+  const accessDept   = data.access_dept
+  const accessLevel  = data.access_level
+
+  // access_members 後端以 JSON 字串儲存，需解析
+  let accessMembers = data.access_members
+  if (typeof accessMembers === 'string') {
+    try { accessMembers = JSON.parse(accessMembers) } catch { accessMembers = [] }
+  }
+
+  if (isPublic) return true
+
+  // 部門權限
+  if (accessDept && accessDept !== user.部門代碼) return false
+
+  // 人員權限
+  if (Array.isArray(accessMembers) && accessMembers.length > 0) {
+    if (!accessMembers.includes(user.員工工號)) return false
+  }
+
+  // 職級權限（數字越小職等越高）
+  if (accessLevel != null && (user.級職 ?? 99) > accessLevel) return false
+
+  return true
 }
 
 // ─── 節點點擊 ────────────────────────────────────────────────
@@ -211,8 +228,8 @@ function onNodeClick(data) {
   if ((data.type === 'article' || data.type === 'attachment') && !checkItemAccess(data)) {
     ElMessage.warning('目前無存取該文件的權限'); return
   }
-  if (data.type === 'article')    router.push(`/article/${data.articleId}`)
-  if (data.type === 'attachment') router.push(`/attachment/${data.attachmentId}`)
+  if (data.type === 'article')    router.push(`/article/${data.article_id}`)
+  if (data.type === 'attachment') router.push(`/attachment/${data.attachment_id}`)
 }
 
 // ─── 重新整理 ────────────────────────────────────────────────
@@ -245,7 +262,7 @@ async function addDirectory() {
 
   adding.value = true
   try {
-    await directoryService.createNode(parentId, name)
+    await directoryService.createNode(parentId, name, dirStore.currentDept)
     showAddDialog.value = false
     newDirName.value = ''
     targetParentNode.value = null
@@ -264,17 +281,33 @@ function startRename(data) {
     confirmButtonText: '確認', cancelButtonText: '取消',
     inputValue: data.label,
     inputValidator: val => (val && val.trim()) ? true : '目錄名稱不能為空',
-  }).then(({ value }) => {
-    if (value?.trim()) { directoryService.renameNode(data.id, value.trim()); ElMessage.success('重新命名成功'); refreshTree() }
+  }).then(async ({ value }) => {
+    if (!value?.trim()) return
+    try {
+      await directoryService.renameNode(data.id, value.trim())
+      ElMessage.success('重新命名成功')
+      refreshTree()
+    } catch (e) {
+      ElMessage.error('重新命名失敗：' + (e.message || '未知錯誤'))
+    }
   }).catch(() => {})
 }
 
 // ─── 移除目錄 ────────────────────────────────────────────────
+// TODO: 後端需補 DELETE /api/v1/directories/:id 端點，api.js 需補 directoryService.removeNode()
 function removeDirectory(node, data) {
   if (data.children?.length) { ElMessage.warning('目錄內還有檔案或子目錄，無法直接移除！'); return }
   ElMessageBox.confirm(`確定要移除空目錄「${data.label}」嗎？`, '移除確認', {
     type: 'warning', confirmButtonText: '確定移除', cancelButtonText: '取消',
-  }).then(() => { ElMessage.success('已移除目錄'); refreshTree() }).catch(() => {})
+  }).then(async () => {
+    try {
+      await directoryService.removeNode(data.id)
+      ElMessage.success('目錄已移除')
+      refreshTree()
+    } catch (e) {
+      ElMessage.error('移除失敗：' + (e.message || '未知錯誤'))
+    }
+  }).catch(() => {})
 }
 </script>
 

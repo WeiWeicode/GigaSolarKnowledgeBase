@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const directoryController = require('../controllers/directoryController');
-const { authMiddleware } = require('../middlewares/auth');
+const { authMiddleware, requireRole } = require('../middlewares/auth');
 
 // 所有目錄路由均需登入
 router.use(authMiddleware);
@@ -33,5 +33,12 @@ router.patch('/:id/rename', directoryController.renameNode);
  * @access Private
  */
 router.patch('/move', directoryController.moveNode);
+
+/**
+ * @route DELETE /api/v1/directories/:id
+ * @desc  刪除空目錄節點（僅 MANAGER / ADMIN）
+ * @access Private (MANAGER+)
+ */
+router.delete('/:id', requireRole('MANAGER', 'ADMIN'), directoryController.deleteNode);
 
 module.exports = router;

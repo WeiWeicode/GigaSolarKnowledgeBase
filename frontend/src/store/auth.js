@@ -22,7 +22,9 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       user.value = await authService.getCurrentUser()
     } catch {
+      // token 無效或過期，一併清除 sessionStorage
       token.value = null
+      sessionStorage.removeItem('kb_token')
     }
   }
 
