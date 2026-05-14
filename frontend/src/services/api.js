@@ -44,10 +44,12 @@ http.interceptors.request.use(config => {
 })
 
 // Response：統一解包 / 401 導回登入
+// 注意：登入端點本身的 401（帳密錯誤）不應觸發重導，否則 ElMessage 來不及顯示
 http.interceptors.response.use(
-  res => res.data,   // 回傳後端 body：{ success, data?, message?, ... }
+  res => res.data,
   err => {
-    if (err.response?.status === 401) {
+    const isLoginEndpoint = err.config?.url?.includes('/auth/login')
+    if (err.response?.status === 401 && !isLoginEndpoint) {
       sessionStorage.removeItem('kb_token')
       window.location.href = '/login'
     }
@@ -540,27 +542,44 @@ export const attachmentService = {
 // ============================================================
 // Comment Service
 // ============================================================
+
+/** 後端 flat snake_case → 前端巢狀 camelCase */
+function normalizeComment(c) {
+  return {
+    id:        c.id,
+    articleId: c.article_id,
+    content:   c.content,
+    mentions:  c.mentions || [],
+    isRead:    c.isRead   || {},
+    createdAt: c.created_at,
+    author: {
+      員工工號: c.author_account,
+      員工姓名: c.author_name,
+    },
+  }
+}
+
 export const commentService = {
   async getByArticleId(articleId) {
     if (USE_MOCK) { await delay(200); return mockComments[articleId] || [] }
 
     // GET /api/v1/articles/:articleId/comments
     const res = await http.get(`/articles/${articleId}/comments`)
-    return res.data  // Comment[]
+    return res.data.map(normalizeComment)  // Comment[]
   },
 
-  async create(articleId, content) {
+  async create(articleId, content, mentions = []) {
     if (USE_MOCK) {
       await delay(300)
-      const c = { id: Date.now(), articleId, author: mockCurrentUser, content, mentions: [], createdAt: new Date().toISOString(), isRead: { [mockCurrentUser.員工工號]: true } }
+      const c = { id: Date.now(), articleId, author: mockCurrentUser, content, mentions, createdAt: new Date().toISOString(), isRead: { [mockCurrentUser.員工工號]: true } }
       if (!mockComments[articleId]) mockComments[articleId] = []
       mockComments[articleId].push(c)
       return c
     }
 
     // POST /api/v1/articles/:articleId/comments
-    const res = await http.post(`/articles/${articleId}/comments`, { content })
-    return res.data  // Comment
+    const res = await http.post(`/articles/${articleId}/comments`, { content, mentions })
+    return normalizeComment(res.data)  // Comment
   },
 
   async markAsRead(articleId, commentId) {
@@ -621,13 +640,41 @@ export const notificationService = {
 // ============================================================
 // Version Service（文章版本）
 // ============================================================
+
+/** 後端 snake_case → 前端 camelCase */
+function normalizeVersion(v) {
+  return {
+    id:            v.id,
+    articleId:     v.article_id,
+    versionNumber: v.version_number,
+    content:       v.content,
+    diffSummary:   v.diff_summary,
+    editorId:      v.editor_id,
+    editorName:    v.editor_name,
+    savedAt:       v.saved_at || v.created_at,
+  }
+}
+
+/** 後端 snake_case → 前端 camelCase（附件版本） */
+function normalizeAttachmentVersion(v) {
+  return {
+    id:             v.id,
+    attachmentId:   v.attachment_id,
+    versionNumber:  v.version_number,
+    diffSummary:    v.diff_summary,
+    editorId:       v.editor_id,
+    editorName:     v.editor_name,
+    savedAt:        v.saved_at || v.created_at,
+  }
+}
+
 export const versionService = {
   async getByArticleId(articleId) {
     if (USE_MOCK) { await delay(200); return mockVersionHistory[articleId] || [] }
 
     // GET /api/v1/articles/:articleId/versions
     const res = await http.get(`/articles/${articleId}/versions`)
-    return res.data  // ArticleVersionHistory[]
+    return res.data.map(normalizeVersion)  // ArticleVersionHistory[]
   },
 
   async rollback(articleId, versionNumber) {
@@ -652,7 +699,7 @@ export const attachmentVersionService = {
 
     // GET /api/v1/attachments/:attachmentId/versions
     const res = await http.get(`/attachments/${attachmentId}/versions`)
-    return res.data  // AttachmentVersionHistory[]
+    return res.data.map(normalizeAttachmentVersion)  // AttachmentVersionHistory[]
   },
 }
 

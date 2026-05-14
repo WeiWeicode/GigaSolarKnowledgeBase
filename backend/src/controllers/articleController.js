@@ -180,7 +180,16 @@ async function createArticle(req, res) {
     }
 
     // 5. 目錄捷徑節點
+    // FIX: 查詢父目錄的 dept_code，確保 article 節點能被 getTree 撈到
     if (directoryIds?.length > 0) {
+      const parentDirs = await Directory.findAll({
+        where: { id: directoryIds },
+        attributes: ['id', 'dept_code'],
+        transaction: t,
+      });
+      const deptCodeMap = {};
+      parentDirs.forEach(d => { deptCodeMap[d.id] = d.dept_code; });
+
       await Directory.bulkCreate(
         directoryIds.map(dirId => ({
           id:         `art-${article.id}-${dirId}`,
@@ -189,6 +198,7 @@ async function createArticle(req, res) {
           label:      title,
           article_id: article.id,
           is_public:  isPublic,
+          dept_code:  deptCodeMap[dirId] || null,  // FIX: 繼承父目錄的 dept_code
           sort_order: 999,
         })),
         { transaction: t }
@@ -287,9 +297,17 @@ async function updateArticle(req, res) {
       });
       const existingParentIds = existingNodes.map(n => n.parent_id);
 
-      // 新增不存在的目錄節點
+      // FIX: 新增節點時查詢父目錄 dept_code
       const toAdd = directoryIds.filter(pid => !existingParentIds.includes(pid));
       if (toAdd.length > 0) {
+        const parentDirs = await Directory.findAll({
+          where: { id: toAdd },
+          attributes: ['id', 'dept_code'],
+          transaction: t,
+        });
+        const deptCodeMap = {};
+        parentDirs.forEach(d => { deptCodeMap[d.id] = d.dept_code; });
+
         await Directory.bulkCreate(
           toAdd.map(dirId => ({
             id:         `art-${id}-${dirId}`,
@@ -298,6 +316,7 @@ async function updateArticle(req, res) {
             label:      title,
             article_id: id,
             is_public:  isPublic,
+            dept_code:  deptCodeMap[dirId] || null,  // FIX: 繼承父目錄的 dept_code
             sort_order: 999,
           })),
           { transaction: t, ignoreDuplicates: true }

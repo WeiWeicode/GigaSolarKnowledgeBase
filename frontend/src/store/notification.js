@@ -16,7 +16,13 @@ export const useNotificationStore = defineStore('notification', () => {
   })
 
   const unread = computed(() => myNotifications.value.filter(n => !n.isRead))
-  const read   = computed(() => myNotifications.value.filter(n =>  n.isRead))
+
+  // 已讀只顯示近 30 天
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
+  const read = computed(() => {
+    const cutoff = Date.now() - THIRTY_DAYS_MS
+    return myNotifications.value.filter(n => n.isRead && new Date(n.createdAt).getTime() >= cutoff)
+  })
 
   async function fetchAll() {
     notifications.value = await notificationService.getAll()

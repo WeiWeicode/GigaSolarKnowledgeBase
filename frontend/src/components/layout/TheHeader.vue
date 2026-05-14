@@ -93,8 +93,10 @@ const roleTagType = computed(() => ({
 }[auth.role] || 'info'))
 
 async function onCompanyChange(oid) {
-  departments.value = await metaService.getDepartments(oid)
-  selectedDept.value = departments.value[0]?.部門代碼 || null
+  const allDepts = await metaService.getDepartments(oid)
+  // 只顯示使用者自己的部門
+  departments.value = allDepts.filter(d => d.部門代碼 === auth.user?.部門代碼)
+  selectedDept.value = auth.user?.部門代碼 || null
   await dirStore.fetchTree(oid, selectedDept.value)
   router.push('/home')
 }
@@ -110,11 +112,22 @@ async function handleLogout() {
 }
 
 onMounted(async () => {
-  companies.value = await metaService.getCompanies()
-  if (selectedCompany.value) {
-    departments.value = await metaService.getDepartments(selectedCompany.value)
+  // 公司/部門資料載失敗不應阻斷通知載入
+  try {
+    companies.value = await metaService.getCompanies()
+    if (selectedCompany.value) {
+      const allDepts = await metaService.getDepartments(selectedCompany.value)
+      // 只顯示使用者自己的部門
+      departments.value = allDepts.filter(d => d.部門代碼 === auth.user?.部門代碼)
+    }
+  } catch {
+    // 靜默失敗
   }
-  await notifStore.fetchAll()
+  try {
+    await notifStore.fetchAll()
+  } catch {
+    // 靜默失敗
+  }
 })
 </script>
 

@@ -49,7 +49,7 @@ async function createComment(req, res) {
   const t = await sequelize.transaction();
   try {
     const { articleId } = req.params;
-    const { content } = req.body;
+    const { content, mentions: clientMentions } = req.body;
 
     if (!content) {
       return res.status(400).json({ success: false, message: '留言內容不可為空' });
@@ -60,26 +60,33 @@ async function createComment(req, res) {
       return res.status(404).json({ success: false, message: '文章不存在' });
     }
 
-    // 1. 解析 @工號 (正規表達式: @[A-Z0-9]+)
-    const mentionMatches = content.match(/@([A-Za-z0-9]+)/g) || [];
-    const mentions = mentionMatches.map(m => m.substring(1)); // 去掉 @
+    // 優先使用前端明確傳入的工號陣列；若無則 fallback 至內文 parse（保留相容）
+    let mentions;
+    if (Array.isArray(clientMentions)) {
+      // 前端已明確傳入工號陣列，直接使用
+      mentions = clientMentions;
+    } else {
+      // fallback: 僅抓英數工號（舊版相容）
+      const mentionMatches = content.match(/@([A-Za-z0-9]+)/g) || [];
+      mentions = mentionMatches.map(m => m.substring(1));
+    }
 
-    // 2. 建立留言
+    // 建立留言
     const comment = await Comment.create({
       article_id: articleId,
       author_account: req.user.員工工號,
       author_name: req.user.員工姓名,
       content,
-      mentions: mentions // Sequelize getter/setter handles JSON
+      mentions: mentions
     }, { transaction: t });
 
-    // 3. 自動標記作者已讀
+    // 自動標記作者已讀
     await CommentRead.create({
       comment_id: comment.id,
       account: req.user.員工工號
     }, { transaction: t });
 
-    // 4. 產生 Mention 通知
+    // 產生 Mention 通知
     if (mentions.length > 0) {
       const notifications = mentions
         .filter(acc => acc !== req.user.員工工號) // 不用通知自己
@@ -93,21 +100,21 @@ async function createComment(req, res) {
           comment_preview: content.substring(0, 100),
           is_read: false
         }));
-      
+
       if (notifications.length > 0) {
         await Notification.bulkCreate(notifications, { transaction: t });
       }
     }
 
     await t.commit();
-    
+
     // 回傳包含 isRead 的完整格式
-    return res.status(201).json({ 
-      success: true, 
+    return res.status(201).json({
+      success: true,
       data: {
         ...comment.get({ plain: true }),
         isRead: { [req.user.員工工號]: true }
-      } 
+      }
     });
   } catch (error) {
     await t.rollback();

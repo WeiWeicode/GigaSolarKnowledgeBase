@@ -44,13 +44,21 @@ const rules = {
 }
 
 async function handleLogin() {
-  await formRef.value?.validate()
+  // 先做表單驗證，驗證失敗直接返回，不顯示登入失敗訊息
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
+
   loading.value = true
   try {
     await auth.login(form.employeeId, form.password)
     router.push('/home')
   } catch (e) {
-    ElMessage.error('登入失敗，請確認工號與密碼')
+    ElMessage({
+      message: '登入失敗，請確認工號與密碼',
+      type: 'error',
+      duration: 3000,
+      showClose: true,
+    })
   } finally {
     loading.value = false
   }

@@ -117,6 +117,7 @@ const bodyRef = ref(null)
 const allColleagues = ref([])
 const mentionList = ref([])
 let mentionStartIndex = -1
+const mentionedAccounts = ref([])  // 追蹤本次留言已 @ 的工號
 
 // ─── Helper：這則留言有沒有 @tag 到我 ─────────────────────────
 function isMentionedMe(comment) {
@@ -215,6 +216,10 @@ function insertMention(colleague) {
   const after = text.slice(cursorPos)
   newComment.value = `${before}@${colleague.員工姓名} ${after}`
   mentionList.value = []
+  // 記錄被 @ 的工號（去重）
+  if (!mentionedAccounts.value.includes(colleague.員工工號)) {
+    mentionedAccounts.value.push(colleague.員工工號)
+  }
   nextTick(() => {
     const textarea = inputRef.value?.$el?.querySelector('textarea')
     if (textarea) {
@@ -232,8 +237,9 @@ async function submitComment() {
   mentionList.value = []
   submitting.value = true
   try {
-    await commentService.create(props.articleId, text)
+    await commentService.create(props.articleId, text, mentionedAccounts.value)
     newComment.value = ''
+    mentionedAccounts.value = []  // 清除 mention 紀錄
     await loadComments()
     ElMessage.success('留言已送出')
     await nextTick()
