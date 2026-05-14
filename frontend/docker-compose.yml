@@ -4,6 +4,6 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-       - "15080:80"
+       - "5151:80"
     volumes:
         - ./dist:/usr/share/nginx/html
