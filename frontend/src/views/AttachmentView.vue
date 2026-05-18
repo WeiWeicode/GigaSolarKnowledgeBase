@@ -79,9 +79,10 @@
               <el-col :span="12">
                 <div class="field-group mb-0">
                   <label class="field-label">標籤</label>
+                  <!-- 用 tag.name 作為 value，避免數字 ID 與 el-select allow-create 型別不匹配導致顯示原始 ID 而非名稱 -->
                   <el-select v-model="form.tagIds" multiple filterable allow-create placeholder="選擇或輸入標籤" size="small"
                     class="full-width">
-                    <el-option v-for="t in tags" :key="t.id" :label="t.name" :value="t.id" />
+                    <el-option v-for="t in tags" :key="t.id" :label="t.name" :value="t.name" />
                   </el-select>
                 </div>
               </el-col>
@@ -273,7 +274,7 @@
               </el-tag>
               <span class="file-size">{{ formatFileSize(f.size) }}</span>
             </div>
-            <el-button size="small" type="primary" plain :href="f.url" tag="a" target="_blank">下載</el-button>
+            <el-button size="small" type="primary" plain @click="handleDownload(f)">下載</el-button>
           </div>
         </div>
       </div>
@@ -523,6 +524,7 @@ async function createAttachment() {
     }
     const created = await attachmentService.create(buildPayload(uploadedFiles))
     ElMessage.success('附件建立成功')
+    fileList.value = []  // 清空，避免導航到檢視頁後進入編輯模式檔案重複顯示
     await dirStore.fetchTree(dirStore.currentCompany, dirStore.currentDept)
     router.push(`/attachment/${created.id}`)
   } finally { saving.value = false }
@@ -553,7 +555,7 @@ async function loadAttachment() {
       isPublic:     res.isPublic ?? false,
       // directoryIds 待後端補充（B-03）
       directories:  res.directoryIds || [],
-      tagIds:       res.tags?.map(t => t.id) || [],
+      tagIds:       res.tags?.map(t => t.name) || [],  // 存名稱而非 ID，避免 el-select allow-create 型別不匹配顯示問題
       linkedArticleIds: res.linkedArticleIds || [],
       editorIds:    res.editors || [],
       hasAccess: {
@@ -583,8 +585,33 @@ watch(() => [props.id, props.mode], async ([newId, newMode]) => {
   if (newMode === 'create') {
     isEditing.value = true; attachment.value = null; fileList.value = []
     Object.assign(form, { title: '', description: '', changeNote: '', isPublished: true, isPublic: false, directories: [], tagIds: [], linkedArticleIds: [], editorIds: [] })
-  } else if (newId) { isEditing.value = newMode === 'edit'; await loadAttachment() }
+  } else if (newId) {
+    fileList.value = []  // 切換至檢視/編輯模式時一律清空，避免舊檔案殘留
+    isEditing.value = newMode === 'edit'; await loadAttachment()
+  }
 })
+
+// ─── 下載：透過 download endpoint 帶原始檔名 ──────────────────────────────
+async function handleDownload(file) {
+  if (!file?.url) return ElMessage.error('無效檔案連結')
+  try {
+    const token = sessionStorage.getItem('kb_token')
+    const resp  = await fetch(file.url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!resp.ok) throw new Error(`status ${resp.status}`)
+    const blob    = await resp.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    const a       = document.createElement('a')
+    a.href     = blobUrl
+    a.download = file.name || 'download'
+    a.click()
+    URL.revokeObjectURL(blobUrl)
+  } catch (err) {
+    console.error('download error:', err)
+    ElMessage.error('下載失敗')
+  }
+}
 </script>
 
 <style scoped>

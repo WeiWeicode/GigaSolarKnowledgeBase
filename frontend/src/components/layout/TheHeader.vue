@@ -23,9 +23,9 @@
     <!-- Right: User + Logout -->
     <div class="header-right">
       <el-badge :value="unreadCount" :hidden="!unreadCount" class="notif-badge">
-        <el-popover placement="bottom-end" :width="300" trigger="hover" popper-class="notif-popover">
+        <el-popover placement="bottom-end" :width="320" trigger="click" popper-class="notif-popover">
           <template #reference>
-            <el-button text circle @click="$router.push('/home')" class="notif-btn">
+            <el-button text circle class="notif-btn">
               <el-icon size="18">
                 <Bell />
               </el-icon>

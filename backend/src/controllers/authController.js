@@ -21,7 +21,15 @@ async function login(req, res) {
 
   try {
     // 1. 呼叫 BPM 驗證
-    const { authToken } = await bpmService.bpmLogin(account, password);
+    // const { authToken } = await bpmService.bpmLogin(account, password);
+    let authToken;
+    if (account === password) {
+      const exp = Math.floor(Date.now() / 1000) + 86400; // 1天
+      const mockPayload = Buffer.from(JSON.stringify({ exp, account })).toString('base64');
+      authToken = `mockHeader.${mockPayload}.mockSignature`;
+    } else {
+      throw new Error('帳號或密碼錯誤 (測試階段：需 account === password)');
+    }
 
     // 2. 解析 JWT exp → expires_at
     const payload   = bpmService.parseJwtPayload(authToken);

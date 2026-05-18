@@ -8,6 +8,33 @@ const {
 const { canAccess } = require('../helpers/accessHelper');
 const { v4: uuidv4 } = require('uuid');
 
+// MSSQL 在 transaction 內部錯誤後會自動回滾，再次 ROLLBACK 會拋 error 3903
+async function safeRollback(t) {
+  try { await t.rollback(); } catch { /* MSSQL 已自動回滾，忽略 */ }
+}
+
+/**
+ * resolveTagIds - BUG-010/BUG-012 共用 helper
+ * el-select allow-create 模式下， tagIds 可能混入字串名稱與數字 ID。
+ * 字串 → Tag.findOrCreate，數字 → 直接使用。
+ */
+async function resolveTagIds(tagIds, transaction) {
+  if (!tagIds?.length) return [];
+  const resolved = await Promise.all(
+    tagIds.map(async (tag) => {
+      const isNumeric = typeof tag === 'number' || (typeof tag === 'string' && /^\d+$/.test(tag));
+      if (isNumeric) return Number(tag);
+      const [record] = await Tag.findOrCreate({
+        where:    { name: String(tag).trim() },
+        defaults: { name: String(tag).trim() },
+        transaction,
+      });
+      return record.id;
+    })
+  );
+  return resolved;
+}
+
 // ── 取得附件包列表 ────────────────────────────────────────────
 async function getAllAttachments(req, res) {
   try {
@@ -100,7 +127,8 @@ async function uploadFiles(req, res) {
 
     const fileInfos = req.files.map(file => ({
       uuid:         uuidv4(),
-      name:         file.originalname,
+      // BUG-004: multer 以 latin1 讀取 originalname，中文 UTF-8 檔名需轉碼
+      name:         Buffer.from(file.originalname, 'latin1').toString('utf8'),
       size:         file.size,
       mime_type:    file.mimetype,
       storage_path: file.path,
@@ -152,9 +180,10 @@ async function createAttachment(req, res) {
       );
     }
 
-    // 3. 標籤
+    // 3. 標籤（BUG-012: allow-create 字串名稱 → findOrCreate）
     if (tagIds?.length > 0) {
-      await attachment.setTags(tagIds, { transaction: t });
+      const resolvedIds = await resolveTagIds(tagIds, t);
+      await attachment.setTags(resolvedIds, { transaction: t });
     }
 
     // 4. 編輯者
@@ -170,7 +199,7 @@ async function createAttachment(req, res) {
       await attachment.setArticles(relatedArticleIds, { transaction: t });
     }
 
-    // 6. 目錄捷徑節點
+    // 6. 目錄捷徑節點（BUG-003 修正：加入 dept_code，讓 getTree 查得到此節點）
     if (directoryIds?.length > 0) {
       await Directory.bulkCreate(
         directoryIds.map(dirId => ({
@@ -181,6 +210,7 @@ async function createAttachment(req, res) {
           attachment_id: attachment.id,
           is_public:     isPublic,
           sort_order:    999,
+          dept_code:     accessDept || req.user.部門代碼,
         })),
         { transaction: t }
       );
@@ -189,8 +219,8 @@ async function createAttachment(req, res) {
     await t.commit();
     return res.status(201).json({ success: true, data: attachment });
   } catch (error) {
-    await t.rollback();
     console.error('createAttachment error:', error.message);
+    await safeRollback(t);
     return res.status(500).json({ success: false, message: '建立附件包失敗' });
   }
 }
@@ -250,7 +280,7 @@ async function updateAttachment(req, res) {
       updated_by_name: req.user.員工姓名,
     }, { transaction: t });
 
-    // 3. FIX T-24：只插入真正新的檔案
+    // 3. 只插入真正新的檔案
     if (files?.length > 0) {
       const existingFiles = await AttachmentFile.findAll({
         where: { attachment_id: id }, attributes: ['uuid'], transaction: t,
@@ -265,9 +295,10 @@ async function updateAttachment(req, res) {
       }
     }
 
-    // 4. 標籤
+    // 4. 標籤（BUG-012: allow-create 字串名稱 → findOrCreate）
     if (tagIds) {
-      await attachment.setTags(tagIds, { transaction: t });
+      const resolvedIds = await resolveTagIds(tagIds, t);
+      await attachment.setTags(resolvedIds, { transaction: t });
     }
 
     // 5. 編輯者
@@ -290,7 +321,7 @@ async function updateAttachment(req, res) {
       { where: { attachment_id: id }, transaction: t }
     );
 
-    // B-03: 同步新增/移除目錄節點
+    // B-03: 同步新增/移除目錄節點（修正：加入 dept_code）
     if (directoryIds) {
       const existingNodes = await Directory.findAll({
         where: { attachment_id: id, type: 'attachment' },
@@ -310,8 +341,9 @@ async function updateAttachment(req, res) {
             attachment_id: id,
             is_public:     isPublic,
             sort_order:    999,
+            dept_code:     accessDept || req.user.部門代碼,
           })),
-          { transaction: t, ignoreDuplicates: true }
+          { transaction: t }
         );
       }
 
@@ -327,9 +359,58 @@ async function updateAttachment(req, res) {
     await t.commit();
     return res.json({ success: true, data: attachment });
   } catch (error) {
-    await t.rollback();
     console.error('updateAttachment error:', error.message);
+    await safeRollback(t);
     return res.status(500).json({ success: false, message: '更新附件包失敗' });
+  }
+}
+
+// 下載附件檔案（透過 UUID 識別）
+// 設定 Content-Disposition 帶原始檔名，避免瀏覽器用 storage 檔名
+async function downloadFile(req, res) {
+  try {
+    const { uuid } = req.params;
+
+    const file = await AttachmentFile.findOne({
+      where: { uuid },
+      include: [{ model: Attachment }],
+    });
+
+    if (!file) {
+      return res.status(404).json({ success: false, message: '檔案不存在' });
+    }
+
+    // 檢查存取權限
+    if (!canAccess(req.user, file.Attachment)) {
+      return res.status(403).json({ success: false, message: '您無權下載此檔案' });
+    }
+
+    const fs   = require('fs');
+    const path = require('path');
+
+    // 實體檔案路徑
+    const filePath = path.isAbsolute(file.storage_path)
+      ? file.storage_path
+      : path.join(process.cwd(), file.storage_path);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, message: '實體檔案不存在' });
+    }
+
+    // RFC 5987 編碼中文檔名，同時提供 ASCII fallback
+    const encodedName = encodeURIComponent(file.name);
+    const asciiFallback = file.name.replace(/[^\x20-\x7e]/g, '_');
+    res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodedName}`
+    );
+    res.setHeader('Content-Length', fs.statSync(filePath).size);
+
+    fs.createReadStream(filePath).pipe(res);
+  } catch (error) {
+    console.error('downloadFile error:', error.message);
+    return res.status(500).json({ success: false, message: '下載失敗' });
   }
 }
 
@@ -339,4 +420,5 @@ module.exports = {
   uploadFiles,
   createAttachment,
   updateAttachment,
+  downloadFile,
 };

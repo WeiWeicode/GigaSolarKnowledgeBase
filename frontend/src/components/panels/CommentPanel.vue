@@ -25,7 +25,7 @@
                 <div class="comment-body-row">
                   <div class="comment-body" v-html="renderComment(c.content)" />
 
-                  <!-- ✅ 只有「有被 @tag 到自己」的留言才顯示已讀按鈕 -->
+                  <!-- 只有「有被 @tag 到自己」的留言才顯示已讀按鈕 -->
                   <template v-if="isMentionedMe(c)">
                     <el-button
                       v-if="!isReadByMe(c)"
@@ -119,24 +119,24 @@ const mentionList = ref([])
 let mentionStartIndex = -1
 const mentionedAccounts = ref([])  // 追蹤本次留言已 @ 的工號
 
-// ─── Helper：這則留言有沒有 @tag 到我 ─────────────────────────
+// Helper：這則留言有沒有 @tag 到我
+// 用 String() 比較，避免 MSSQL int 與前端 string 型別不一致導致誤判
 function isMentionedMe(comment) {
   const myId = auth.user?.員工工號
   if (!myId) return false
-  // 支援兩種格式：mentions 陣列 或 content 內有 @我的名字
   if (Array.isArray(comment.mentions)) {
-    return comment.mentions.includes(myId)
+    return comment.mentions.some(m => String(m) === String(myId))
   }
   // fallback：content 內搜尋
   const myName = auth.user?.員工姓名
   return myName ? comment.content.includes('@' + myName) : false
 }
 
-// ─── Helper：我有沒有讀過這則留言 ────────────────────────────
+// Helper：我有沒有讀過這則留言
 function isReadByMe(comment) {
   const myId = auth.user?.員工工號
   if (!myId) return true
-  return !!comment.isRead?.[myId]
+  return comment.isRead?.[myId] === true
 }
 
 function close() {
@@ -158,14 +158,14 @@ async function loadComments() {
   }
 }
 
-// ─── 標記已讀 ────────────────────────────────────────────────
+// 標記已讀
 async function markAsRead(idx, commentId) {
   if (readingId.value === commentId) return
   readingId.value = commentId
   try {
     await commentService.markAsRead(props.articleId, commentId)
 
-    // ✅ 用 splice 替換 item，確保 Vue 偵測到巢狀屬性變更
+    // 用 splice 替換 item，確保 Vue 偵測到巢狀屬性變更
     const old = comments.value[idx]
     comments.value.splice(idx, 1, {
       ...old,
@@ -174,7 +174,7 @@ async function markAsRead(idx, commentId) {
 
     // 同步更新首頁通知卡片（如果有對應通知）
     const matchingNotif = notifStore.notifications.find(
-      n => n.commentId === commentId && n.targetUserId === auth.user.員工工號
+      n => String(n.commentId) === String(commentId) && String(n.targetUserId) === String(auth.user.員工工號)
     )
     if (matchingNotif && !matchingNotif.isRead) {
       await notifStore.markAsRead(matchingNotif.id)
@@ -186,7 +186,7 @@ async function markAsRead(idx, commentId) {
   }
 }
 
-// ─── @mention autocomplete ────────────────────────────────────
+// @mention autocomplete
 function onInput() {
   const text = newComment.value
   const cursorPos = inputRef.value?.$el?.querySelector('textarea')?.selectionStart ?? text.length
@@ -230,7 +230,7 @@ function insertMention(colleague) {
   })
 }
 
-// ─── 送出留言 ─────────────────────────────────────────────────
+// 送出留言
 async function submitComment() {
   const text = newComment.value.trim()
   if (!text) return
@@ -365,7 +365,7 @@ watch(() => props.modelValue, async (v) => {
   white-space: nowrap;
 }
 
-/* ─── Footer ─────────────────────────────────────────────── */
+/* Footer */
 .panel-footer {
   padding: 16px 20px;
   border-top: 1px solid var(--color-border);
@@ -378,7 +378,7 @@ watch(() => props.modelValue, async (v) => {
 
 .submit-btn { width: 100%; }
 
-/* ─── @mention dropdown ──────────────────────────────────── */
+/* @mention dropdown */
 .mention-dropdown {
   position: absolute;
   bottom: calc(100% - 16px);
@@ -413,7 +413,7 @@ watch(() => props.modelValue, async (v) => {
 .mention-name { font-size: 13px; font-weight: 600; color: var(--color-text-primary); }
 .mention-dept { font-size: 11px; color: var(--color-text-muted); margin-left: auto; }
 
-/* ─── Slide-in ───────────────────────────────────────────── */
+/* Slide-in */
 .panel-enter-active, .panel-leave-active { transition: opacity 0.25s ease; }
 .panel-enter-active .side-panel, .panel-leave-active .side-panel {
   transition: transform 0.28s cubic-bezier(.4,0,.2,1);

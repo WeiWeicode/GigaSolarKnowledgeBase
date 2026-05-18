@@ -47,6 +47,13 @@ router.get('/', attachmentController.getAllAttachments);
 router.post('/upload', upload.array('files', 10), attachmentController.uploadFiles);
 
 /**
+ * @route GET /api/v1/attachments/files/:uuid/download
+ * @desc  下載附件檔案（透過 UUID 識別）
+ * 必須放在 /:id 之前，防止 express 把 'files' 當成 :id
+ */
+router.get('/files/:uuid/download', attachmentController.downloadFile);
+
+/**
  * @route GET /api/v1/attachments/:id
  * @desc  取得單一附件包
  */

@@ -57,9 +57,18 @@ http.interceptors.response.use(
   }
 )
 
-// ============================================================
-// Normalizers：後端 snake_case → 前端 camelCase
-// ============================================================
+// 用於補全上傳檔案的相對路徑（/uploads/...）
+const BACKEND_ORIGIN = http.defaults.baseURL.replace(/\/api\/v1\/?$/, '')
+
+function normalizeBoolean(value) {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value === 1
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    return normalized === 'true' || normalized === '1'
+  }
+  return Boolean(value)
+}
 
 /**
  * 將後端 Notification 欄位轉換為前端所需格式
@@ -78,7 +87,7 @@ function normalizeNotification(n) {
     },
     commentId:      n.comment_id,
     commentPreview: n.comment_preview,
-    isRead:         n.is_read,
+    isRead:         normalizeBoolean(n.is_read ?? n.isRead),
     createdAt:      n.created_at,
   }
 }
@@ -103,8 +112,10 @@ function normalizeArticle(a) {
     createdAt:     a.created_at,
     updatedAt:     a.updated_at,
     // Sequelize association 以大寫 alias 回傳，統一轉小寫
-    tags:    (a.Tags    || a.tags    || []).map(t => ({ id: t.id, name: t.name })),
-    editors: (a.Editors || a.editors || []).map(e => e.editor_account || e.editorAccount || e),
+    tags:          (a.Tags    || a.tags    || []).map(t => ({ id: t.id, name: t.name })),
+    editors:       (a.Editors || a.editors || []).map(e => e.editor_account || e.editorAccount || e),
+    // BUG-006: 關聯附件 id 陣列，後端 getArticleById 已補回
+    attachmentIds: a.attachmentIds || [],
   }
 }
 
@@ -135,7 +146,11 @@ function normalizeAttachment(a) {
       name:          f.name,
       size:          f.size,
       mimeType:      f.mime_type,
-      url:           f.url,
+      // BUG-011: 改用 /api/v1/attachments/files/:uuid/download
+      // 後端會設定 Content-Disposition 帶原始檔名，而非 storage 的隨機檔名
+      url: f.uuid
+        ? `${BACKEND_ORIGIN}/api/v1/attachments/files/${f.uuid}/download`
+        : (f.url ? (f.url.startsWith('http') ? f.url : `${BACKEND_ORIGIN}${f.url}`) : null),
       storagePath:   f.storage_path,
       versionNumber: f.version_number,
     })),
@@ -545,12 +560,17 @@ export const attachmentService = {
 
 /** 後端 flat snake_case → 前端巢狀 camelCase */
 function normalizeComment(c) {
+  const readMap = {}
+  Object.entries(c.isRead || {}).forEach(([account, value]) => {
+    readMap[account] = normalizeBoolean(value)
+  })
+
   return {
     id:        c.id,
     articleId: c.article_id,
     content:   c.content,
     mentions:  c.mentions || [],
-    isRead:    c.isRead   || {},
+    isRead:    readMap,
     createdAt: c.created_at,
     author: {
       員工工號: c.author_account,

@@ -78,7 +78,7 @@ function rowToUser(row) {
   return {
     組織名稱:     row.組織名稱     || '',
     組織OID:      row.組織OID      || '',
-    員工工號:     row.員工工號     || '',
+    員工工號:     row.員工工號 != null ? String(row.員工工號) : '',
     員工姓名:     row.員工姓名     || '',
     員工Mail:     row.員工Mail     || '',
     職稱:         row.職稱         || '',
@@ -156,7 +156,11 @@ async function getAllColleagues() {
     `;
 
     const result = await pool.request().query(sql);
-    return result.recordset;
+    // 統一將員工工號轉為字串，與 auth.user 保持一致
+    return result.recordset.map(row => ({
+      ...row,
+      員工工號: row.員工工號 != null ? String(row.員工工號) : '',
+    }));
   } catch (error) {
     console.error('nanaService.getAllColleagues error:', error.message);
     throw error;

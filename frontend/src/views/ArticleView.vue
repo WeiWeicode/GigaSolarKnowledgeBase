@@ -269,13 +269,22 @@
     <el-dialog v-model="showAttachPicker" title="關聯文件" width="800px">
       <el-table :data="filteredAttachments" @selection-change="handleAttachSelection" row-key="id" ref="attachTableRef">
         <el-table-column type="selection" width="55" />
-        <el-table-column prop="files[0].name" label="檔名" />
-        <el-table-column label="所屬目錄">
+        <!-- BUG-007: prop="files[0].name" 不支援陣列索引語法，改用 template slot -->
+        <el-table-column label="檔名">
           <template #default="{ row }">
-            <el-tag v-for="dId in row.directories" :key="dId" size="small" type="info" class="mr-1">{{ getDirLabel(dId) }}</el-tag>
+            {{ row.files?.[0]?.name || row.title || '-' }}
           </template>
         </el-table-column>
-        <el-table-column prop="description" label="描述" />
+        <el-table-column label="所屬目錄">
+          <template #default="{ row }">
+            <el-tag v-for="dId in row.directoryIds" :key="dId" size="small" type="info" class="mr-1">{{ getDirLabel(dId) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="描述">
+          <template #default="{ row }">
+            {{ row.description || '-' }}
+          </template>
+        </el-table-column>
       </el-table>
       <template #footer>
         <el-button @click="showAttachPicker = false">取消</el-button>
@@ -445,7 +454,15 @@ async function renderPreview() {
 }
 
 // ─── Actions ─────────────────────────────────────────────────
-function startEdit() { isEditing.value = true; initVditor() }
+async function startEdit() {
+  try {
+    tags.value = await tagService.getAll()
+  } catch {
+    // 重載失敗時保留現有 tags，不阻斷進入編輯
+  }
+  isEditing.value = true
+  initVditor()
+}
 function cancelEdit() { destroyVditor(); isEditing.value = false; nextTick(() => renderPreview()) }
 
 // ─── 將 form 轉換為後端所需 payload ──────────────────────────────────

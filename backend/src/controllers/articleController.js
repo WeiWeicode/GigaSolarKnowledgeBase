@@ -8,6 +8,35 @@ const {
 const { canAccess } = require('../helpers/accessHelper');
 const { Op } = require('sequelize');
 
+/**
+ * resolveTagIds
+ * el-select allow-create 模式下，form.tagIds 可能混入字串（新標籤名稱）與數字（既有 tag id）。
+ * 此 helper 統一解析：數字照用、字串則 findOrCreate 取得 id。
+ * MSSQL 不支援在 transaction 中 INSERT IGNORE，所以先 findOrCreate 再 setTags。
+ */
+async function resolveTagIds(tagIds, transaction) {
+  if (!tagIds?.length) return [];
+  const resolved = await Promise.all(
+    tagIds.map(async (tag) => {
+      const isNumeric = typeof tag === 'number' || (typeof tag === 'string' && /^\d+$/.test(tag));
+      if (isNumeric) return Number(tag);
+      // 字串 = allow-create 新標籤名稱
+      const [record] = await Tag.findOrCreate({
+        where:    { name: String(tag).trim() },
+        defaults: { name: String(tag).trim() },
+        transaction,
+      });
+      return record.id;
+    })
+  );
+  return resolved;
+}
+
+// ── 安全 rollback（MSSQL 發生錯誤後會自動回滾，再次 ROLLBACK 會拋 error 3903） ──
+async function safeRollback(t) {
+  try { await t.rollback(); } catch { /* MSSQL 已自動回滾，忽略 */ }
+}
+
 // ── 取得文章列表 ──────────────────────────────────────────────
 async function getAllArticles(req, res) {
   try {
@@ -27,7 +56,6 @@ async function getAllArticles(req, res) {
       return canAccess(req.user, article);
     });
 
-    // B-03: 批次查詢每篇文章的 directoryIds（該文章所在目錄的 parent_id）
     const articleIds = filtered.map(a => a.id);
     const allDirNodes = articleIds.length
       ? await Directory.findAll({
@@ -71,7 +99,6 @@ async function getArticleById(req, res) {
       return res.status(403).json({ success: false, message: '您無權存取此文章' });
     }
 
-    // 指定版本：用歷史快照的 content 覆蓋
     if (version) {
       const history = await ArticleVersionHistory.findOne({
         where: { article_id: id, version_number: version },
@@ -82,12 +109,15 @@ async function getArticleById(req, res) {
       }
     }
 
-    // B-03: 補上該文章所在目錄的 parent_id 陣列
     const dirNodes = await Directory.findAll({
       where: { article_id: id, type: 'article' },
       attributes: ['parent_id'],
     });
     article.setDataValue('directoryIds', dirNodes.map(d => d.parent_id));
+
+    // BUG-006: 補上關聯附件 id 陣列
+    const linkedAttachments = await article.getAttachments({ attributes: ['id'] });
+    article.setDataValue('attachmentIds', linkedAttachments.map(a => a.id));
 
     return res.json({ success: true, data: article });
   } catch (error) {
@@ -135,23 +165,23 @@ async function createArticle(req, res) {
       tagIds, editorAccounts, attachmentIds, directoryIds,
     } = req.body;
 
-    // 1. 建立文章主表（version_number 預設為 1）
+    // 1. 建立文章主表
     const article = await Article.create({
       title,
       content,
-      is_published:  isPublished,
-      is_public:     isPublic,
-      access_dept:   accessDept,
+      is_published:   isPublished,
+      is_public:      isPublic,
+      access_dept:    accessDept,
       access_members: Array.isArray(accessMembers) ? JSON.stringify(accessMembers) : accessMembers,
-      access_level:  accessLevel,
+      access_level:   accessLevel,
       version_number: 1,
-      created_by:    req.user.員工工號,
+      created_by:     req.user.員工工號,
       created_by_name: req.user.員工姓名,
-      updated_by:    req.user.員工工號,
+      updated_by:     req.user.員工工號,
       updated_by_name: req.user.員工姓名,
     }, { transaction: t });
 
-    // FIX T-31：建立時即儲存版本 1 快照
+    // 2. 版本 1 快照
     await ArticleVersionHistory.create({
       article_id:     article.id,
       version_number: 1,
@@ -161,12 +191,13 @@ async function createArticle(req, res) {
       editor_name:    req.user.員工姓名,
     }, { transaction: t });
 
-    // 2. 標籤
+    // 3. 標籤（BUG-010: allow-create 字串名稱 → findOrCreate 解析為數字 id）
     if (tagIds?.length > 0) {
-      await article.setTags(tagIds, { transaction: t });
+      const resolvedIds = await resolveTagIds(tagIds, t);
+      await article.setTags(resolvedIds, { transaction: t });
     }
 
-    // 3. 編輯者
+    // 4. 編輯者
     if (editorAccounts?.length > 0) {
       await ArticleEditor.bulkCreate(
         editorAccounts.map(acc => ({ article_id: article.id, editor_account: acc })),
@@ -174,13 +205,12 @@ async function createArticle(req, res) {
       );
     }
 
-    // 4. 附件關聯
+    // 5. 附件關聯
     if (attachmentIds?.length > 0) {
       await article.setAttachments(attachmentIds, { transaction: t });
     }
 
-    // 5. 目錄捷徑節點
-    // FIX: 查詢父目錄的 dept_code，確保 article 節點能被 getTree 撈到
+    // 6. 目錄捷徑節點
     if (directoryIds?.length > 0) {
       const parentDirs = await Directory.findAll({
         where: { id: directoryIds },
@@ -198,7 +228,7 @@ async function createArticle(req, res) {
           label:      title,
           article_id: article.id,
           is_public:  isPublic,
-          dept_code:  deptCodeMap[dirId] || null,  // FIX: 繼承父目錄的 dept_code
+          dept_code:  deptCodeMap[dirId] || null,
           sort_order: 999,
         })),
         { transaction: t }
@@ -208,8 +238,9 @@ async function createArticle(req, res) {
     await t.commit();
     return res.status(201).json({ success: true, data: article });
   } catch (error) {
-    await t.rollback();
+    // 先記錄原始錯誤，再安全 rollback（MSSQL 自動回滾後再呼叫 ROLLBACK 會拋 error 3903）
     console.error('createArticle error:', error.message);
+    await safeRollback(t);
     return res.status(500).json({ success: false, message: '建立文章失敗' });
   }
 }
@@ -239,14 +270,17 @@ async function updateArticle(req, res) {
       return res.status(403).json({ success: false, message: '您無權修改此文章' });
     }
 
-    // FIX T-31：版本快照邏輯
-    const currentVersion = article.version_number;
-    const nextVersion    = currentVersion + 1;
+    // 版本快照（BUG-015：先查 history 最大版本號再 +1，避免 createArticle 已寫入 v1 後重複寫入）
+    const maxHistoryVersion = await ArticleVersionHistory.max('version_number', {
+      where: { article_id: article.id },
+      transaction: t,
+    }) || 0;
+    const nextVersion = maxHistoryVersion + 1;
 
     await ArticleVersionHistory.create({
       article_id:     article.id,
-      version_number: currentVersion,
-      content:        article.content,
+      version_number: nextVersion,
+      content:        content,        // 儲存本次更新後的新內容
       diff_summary:   changeNote || '更新內容',
       editor_id:      req.user.員工工號,
       editor_name:    req.user.員工姓名,
@@ -255,18 +289,20 @@ async function updateArticle(req, res) {
     await article.update({
       title,
       content,
-      is_published:  isPublished,
-      is_public:     isPublic,
-      access_dept:   accessDept,
+      is_published:   isPublished,
+      is_public:      isPublic,
+      access_dept:    accessDept,
       access_members: Array.isArray(accessMembers) ? JSON.stringify(accessMembers) : accessMembers,
-      access_level:  accessLevel,
+      access_level:   accessLevel,
       version_number: nextVersion,
-      updated_by:    req.user.員工工號,
+      updated_by:     req.user.員工工號,
       updated_by_name: req.user.員工姓名,
     }, { transaction: t });
 
+    // 標籤（BUG-010: allow-create 字串名稱 → findOrCreate）
     if (tagIds) {
-      await article.setTags(tagIds, { transaction: t });
+      const resolvedIds = await resolveTagIds(tagIds, t);
+      await article.setTags(resolvedIds, { transaction: t });
     }
 
     if (editorAccounts) {
@@ -281,14 +317,12 @@ async function updateArticle(req, res) {
       await article.setAttachments(attachmentIds, { transaction: t });
     }
 
-    // B-03: 同步目錄捷徑節點
-    // 先更新既有節點的 label / is_public
+    // 目錄節點同步
     await Directory.update(
       { label: title, is_public: isPublic },
       { where: { article_id: id }, transaction: t }
     );
 
-    // 若 directoryIds 有傳入，同步新增/移除目錄節點
     if (directoryIds) {
       const existingNodes = await Directory.findAll({
         where: { article_id: id, type: 'article' },
@@ -297,7 +331,6 @@ async function updateArticle(req, res) {
       });
       const existingParentIds = existingNodes.map(n => n.parent_id);
 
-      // FIX: 新增節點時查詢父目錄 dept_code
       const toAdd = directoryIds.filter(pid => !existingParentIds.includes(pid));
       if (toAdd.length > 0) {
         const parentDirs = await Directory.findAll({
@@ -316,14 +349,13 @@ async function updateArticle(req, res) {
             label:      title,
             article_id: id,
             is_public:  isPublic,
-            dept_code:  deptCodeMap[dirId] || null,  // FIX: 繼承父目錄的 dept_code
+            dept_code:  deptCodeMap[dirId] || null,
             sort_order: 999,
           })),
-          { transaction: t, ignoreDuplicates: true }
+          { transaction: t }
         );
       }
 
-      // 移除已取消勾選的目錄節點
       const toRemove = existingParentIds.filter(pid => !directoryIds.includes(pid));
       if (toRemove.length > 0) {
         await Directory.destroy({
@@ -336,8 +368,8 @@ async function updateArticle(req, res) {
     await t.commit();
     return res.json({ success: true, data: article });
   } catch (error) {
-    await t.rollback();
     console.error('updateArticle error:', error.message);
+    await safeRollback(t);
     return res.status(500).json({ success: false, message: '更新文章失敗' });
   }
 }

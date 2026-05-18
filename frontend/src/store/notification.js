@@ -7,21 +7,26 @@ import { useAuthStore } from '@/store/auth.js'
 export const useNotificationStore = defineStore('notification', () => {
   const notifications = ref([])
 
+  function isRead(notification) {
+    return notification.isRead === true
+  }
+
   // 只顯示「被 @tag 到自己」的通知
+  // 後端 GET /api/v1/notifications 已依 target_account 過濾，前端再做字串化比較避免型別不一致
   const myNotifications = computed(() => {
     const auth = useAuthStore()
     const myId = auth.user?.員工工號
     if (!myId) return []
-    return notifications.value.filter(n => n.targetUserId === myId)
+    return notifications.value.filter(n => String(n.targetUserId) === String(myId))
   })
 
-  const unread = computed(() => myNotifications.value.filter(n => !n.isRead))
+  const unread = computed(() => myNotifications.value.filter(n => !isRead(n)))
 
   // 已讀只顯示近 30 天
   const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
   const read = computed(() => {
     const cutoff = Date.now() - THIRTY_DAYS_MS
-    return myNotifications.value.filter(n => n.isRead && new Date(n.createdAt).getTime() >= cutoff)
+    return myNotifications.value.filter(n => isRead(n) && new Date(n.createdAt).getTime() >= cutoff)
   })
 
   async function fetchAll() {
