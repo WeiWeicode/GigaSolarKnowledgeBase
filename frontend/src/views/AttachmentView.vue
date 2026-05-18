@@ -127,7 +127,7 @@
                   <label class="field-label">查看級職門檻</label>
                   <el-select v-model="form.hasAccess.職級" size="small" class="full-width">
                     <el-option label="一般人員（全員可見）" :value="10" />
-                    <el-option label="課級以上" :value="8" />
+                    <el-option label="課級以上" :value="7" />
                     <el-option label="理級以上" :value="6" />
                     <el-option label="處級以上" :value="4" />
                   </el-select>
@@ -138,7 +138,7 @@
 
           <el-divider />
 
-          <!-- 其他與操作 -->
+          <!-- 其他與操作 --> 
           <div class="section-block mb-0">
             <div class="section-title-small"><el-icon>
                 <MoreFilled />

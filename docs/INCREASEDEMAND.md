@@ -11,6 +11,45 @@
 
 ---
 
+# 優化標籤功能
+狀態: 待規劃
+新增需求日期: 2026-05-18
+預期功能:
+1. 新增部門：標籤需綁定多個部門，供跨部門使用（使用陣列，建立時順便寫入）。
+2. 自訂排序：於部門文件狀態下，支援主管自訂標籤排序。
+3. 熱度排序：於公開文件狀態下，根據點擊次數進行排序（點擊次數越多排越前）。
+4. 公開標籤：支援設定標籤是否於公開文件中顯示並可被點擊。
+5. 前端設定：於前端「設定」頁面新增標籤管理 Tab，提供主管建立標籤、設定相關部門、自訂排序及是否公開等功能。
+預期調整項目:
+- 資料庫 `tags` Table 新增欄位：
+  - `departments` (JSON): 紀錄綁定的部門陣列。
+  - `custom_order` (INT): 紀錄自訂排序。
+  - `click_count` (INT): 紀錄公開文件中的點擊次數。
+  - `is_public` (BIT): 標示是否為公開標籤。
+- 後端 API：
+  - 更新標籤相關 CRUD API，支援寫入及更新上述新增欄位。
+  - 新增 API 處理公開標籤點擊次數累加功能。
+- 前端調整：
+  - `SettingsView.vue` 新增「標籤管理」Tab（僅 MANAGER 可見）。
+  - 實作標籤的建立、編輯介面（含部門選擇、自訂排序輸入、是否公開切換）。
+  - 標籤顯示邏輯調整：部門文件依 `custom_order` 排序，公開文件依 `click_count` 排序。
+規劃調整內容:
+1. **DB Schema**:
+   修改 `tags` Table，擴充 `departments` (NVARCHAR(MAX))、`custom_order` (INT, default 0)、`click_count` (INT, default 0)、`is_public` (BIT, default 0) 等欄位。
+2. **Backend**:
+   - 更新 Model `Tag.js`。
+   - 更新 Controller `tagController.js` 支援新增欄位的 CRUD，並加入 `incrementClickCount` 功能。
+   - 更新 Route `tags.js` 的路由驗證。
+3. **Frontend**:
+   - `api.js` 擴充標籤 API 的串接。
+   - 更新 `SettingsView.vue` 以支援「標籤管理」Tab 介面。
+   - 更新既有顯示標籤的元件，依照部門狀態或公開狀態呈現不同的排序方式。
+實際測試:
+實際調整項目:
+完成日期:
+
+---
+
 # 跨部門管理權限
 狀態: ✅ 完成
 新增需求日期: 2026-05-18
