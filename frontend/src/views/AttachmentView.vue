@@ -2,13 +2,7 @@
   <div class="attachment-view">
     <div v-if="loading" class="page-loading"><el-skeleton :rows="8" animated /></div>
 
-    <div v-else-if="accessDenied" class="access-denied-banner">
-      <el-result icon="warning" title="無權限查看" sub-title="您的職級或帳號不在本附件的存取清單內，無法檢視此附件。">
-        <template #extra><el-button type="primary" @click="router.back()">返回</el-button></template>
-      </el-result>
-    </div>
-
-    <template v-else-if="!accessDenied">
+    <template v-else>
       <!-- Header -->
       <div class="article-header">
         <div class="header-left-col">
@@ -120,7 +114,7 @@
               </el-col>
               <el-col :span="12">
                 <div class="field-group mb-0">
-                  <label class="field-label">存取權限 – 指定人員</label>
+                  <label class="field-label">查看權限 – 指定人員</label>
                   <el-select v-model="form.hasAccess.人員" multiple filterable placeholder="空白代表部門全員" size="small"
                     class="full-width">
                     <el-option v-for="c in currentDeptColleagues" :key="c.員工工號" :label="c.員工姓名" :value="c.員工工號" />
@@ -128,9 +122,9 @@
                 </div>
               </el-col>
               <el-col :span="12">
-                <!-- ✅ 職級門檻改用選項 -->
+                <!-- ✅ 查看級職門檻改用選項 -->
                 <div class="field-group mb-0">
-                  <label class="field-label">職級門檻</label>
+                  <label class="field-label">查看級職門檻</label>
                   <el-select v-model="form.hasAccess.職級" size="small" class="full-width">
                     <el-option label="一般人員（全員可見）" :value="10" />
                     <el-option label="課級以上" :value="8" />
@@ -230,7 +224,7 @@
             <el-tag v-for="d in form.directories" :key="d" size="small" type="info" class="mr-1 mb-1">{{ getDirLabel(d)
               }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="職級門檻">
+          <el-descriptions-item label="查看級職門檻">
             <el-tag size="small" type="warning">{{ gradeLevelLabel(form.hasAccess.職級) }}</el-tag>
           </el-descriptions-item>
         </el-descriptions>
@@ -337,7 +331,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } 
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/auth.js'
 import { useDirectoryStore } from '@/store/directory.js'
-import { attachmentService, tagService, colleagueService, articleService } from '@/services/api.js'
+import { attachmentService, tagService, colleagueService, articleService, crossDeptService } from '@/services/api.js'
 import { formatDateTime, formatFileSize } from '@/utils/dateFormat.js'
 import { ElMessage } from 'element-plus'
 import CommentPanel from '@/components/panels/CommentPanel.vue'
@@ -370,7 +364,7 @@ const attachTableRef = ref(null)
 const tempEditors = ref([])
 const tempAttachSelection = ref([])
 const isEditing = ref(props.mode === 'edit')
-const accessDenied = ref(false)
+const myGrantedDepts = ref([])  // 跨部門授權的部門代碼清單
 
 // ✅ 職級選項（與 ArticleView 一致）
 const GRADE_OPTIONS = [
@@ -454,10 +448,29 @@ function isArticleAccessible(id) {
   if (!art) return false
   const isPublic = art.isPublic === true
   if (dirStore.viewScope === 'public' && !isPublic) return false
-  const members = Array.isArray(art.accessMembers) ? art.accessMembers : []
-  return (isPublic || !art.accessDept || art.accessDept === auth.user?.部門代碼)
-      && (isPublic || !members.length || members.includes(auth.user?.員工工號))
-      && (!art.accessLevel || (auth.user?.級職 ?? 99) <= art.accessLevel)
+  if (isPublic) return true
+
+  const members   = Array.isArray(art.accessMembers) ? art.accessMembers : []
+  const accessLevel = art.accessLevel ?? 10
+  const passLevel   = accessLevel >= 10 || (auth.user?.級職 ?? 99) <= accessLevel
+
+  let primaryAccess = false
+  if (members.length > 0) {
+    primaryAccess = members.map(String).includes(String(auth.user?.員工工號))
+  } else {
+    const rDept = art.accessDept || ''
+    const uDept = auth.user?.部門代碼 || ''
+    if (!rDept) {
+      primaryAccess = true
+    } else {
+      const exactMatch  = uDept === rDept
+      const prefixMatch = uDept.length >= 3 && rDept.length >= 3
+                       && uDept.substring(0, 3) === rDept.substring(0, 3)
+      const crossMatch  = myGrantedDepts.value.includes(rDept)
+      primaryAccess = exactMatch || prefixMatch || crossMatch
+    }
+  }
+  return primaryAccess && passLevel
 }
 watch(showEditorPicker, v => { if (v) tempEditors.value = [...form.editorIds] })
 function confirmEditorSelection() { form.editorIds = [...tempEditors.value]; showEditorPicker.value = false }
@@ -539,14 +552,46 @@ async function loadAttachment() {
     if (!auth.isAdmin) {
       const isPublic = res.isPublic === true
       const members  = Array.isArray(res.accessMembers) ? res.accessMembers : []
-      if (dirStore.viewScope === 'public' && !isPublic) { accessDenied.value = true; return }
-      if (!((isPublic || !res.accessDept || res.accessDept === auth.user?.部門代碼)
-          && (isPublic || !members.length || members.includes(auth.user?.員工工號))
-          && (!res.accessLevel || (auth.user?.級職 ?? 99) <= res.accessLevel))) {
-        accessDenied.value = true; return
+
+      // 公開瀏覽模式：非公開附件 → 跳回首頁
+      if (dirStore.viewScope === 'public' && !isPublic) {
+        ElMessage.warning('此附件非公開，無法在公開瀏覽模式下檢視')
+        router.push('/')
+        return
+      }
+
+      if (!isPublic) {
+        let primaryAccess = false
+        // 查看級職門檻：access_level=10 代表全員可見（跳過檢查）
+        const passLevel = (res.accessLevel ?? 10) >= 10
+                       || (auth.user?.級職 ?? 99) <= (res.accessLevel ?? 10)
+
+        if (members.length > 0) {
+          // 【最高優先】指定人員：僅名單內帳號可存取
+          primaryAccess = members.map(String).includes(String(auth.user?.員工工號))
+        } else {
+          // 無指定人員：依部門代碼前三碼 + 跨部門授權
+          const rDept = res.accessDept || ''
+          const uDept = auth.user?.部門代碼 || ''
+          if (!rDept) {
+            // 無部門限制 → 全員均可存取
+            primaryAccess = true
+          } else {
+            const exactMatch  = uDept === rDept
+            const prefixMatch = uDept.length >= 3 && rDept.length >= 3
+                             && uDept.substring(0, 3) === rDept.substring(0, 3)
+            const crossMatch  = myGrantedDepts.value.includes(rDept)
+            primaryAccess = exactMatch || prefixMatch || crossMatch
+          }
+        }
+
+        if (!primaryAccess || !passLevel) {
+          ElMessage.warning('您沒有存取此附件的權限')
+          router.push('/')
+          return
+        }
       }
     }
-    accessDenied.value = false
     Object.assign(form, {
       title:        res.title || '',
       description:  res.description || '',
@@ -559,7 +604,8 @@ async function loadAttachment() {
       linkedArticleIds: res.linkedArticleIds || [],
       editorIds:    res.editors || [],
       hasAccess: {
-        部門: res.accessDept || auth.user?.部門代碼 || '',
+        // Bug B fix: 不再 fallback 至登入者部門代碼，避免儲存時沙染 access_dept
+        部門: res.accessDept || '',
         人員: [...(Array.isArray(res.accessMembers) ? res.accessMembers : [])],
         職級: res.accessLevel ?? 10,
       },
@@ -577,6 +623,13 @@ onMounted(async () => {
     ])
   } catch {
     // 輔助資料載入失敗不阻斷主要功能
+  }
+  // 取得跨部門授權清單（失敗不阻斷主流程）
+  try {
+    const grants = await crossDeptService.getMyGrants()
+    myGrantedDepts.value = grants.map(g => g.dept_code)
+  } catch {
+    // 靜默失敗，退回無跨部門授權
   }
   if (props.mode !== 'create') await loadAttachment()
 })

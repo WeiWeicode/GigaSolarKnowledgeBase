@@ -158,3 +158,63 @@
 - **修正檔案**：`frontend/src/services/api.js`
 - **修正內容**：`normalizeArticle` 的 `accessMembers` 欄位改為 IIFE 解析：若已是陣列直接使用，若為字串則 `JSON.parse`，解析失敗回傳 `[]`。
 - **驗證方式**：設定文章「存取權限 – 指定人員」後儲存，重新進入編輯確認人員清單仍顯示原始設定值，且 Request Payload 中 `accessMembers` 非空陣列。
+
+---
+
+### [BUG-018] 指定人員存取權限跨部門無法讀取文章
+- **狀態**：✅ 已修正（2026-05-18）
+- **根本原因**：三個複合問題：
+  1. **Bug A（邏輯錯誤）**：`ArticleView.vue` `loadArticle` 的存取判斷採 AND（所有限制均須符合才能進入），但後端 `canAccess` 採 OR（任一通過即可）。導致「指定人員」 + 「部門限制」同時存在時，另一部門的指定人員因部門不符而在前端被攔截。
+  2. **Bug B（資料污染）**：`loadArticle` 中 `form.hasAccess.部門` 預設值為 `res.accessDept || auth.user?.部門代碼 || ''`。當文章無部門限制（`accessDept` 為空）時，會自動填入當前登入者的部門代碼，下次儲存即把部門限制「悄悄寫進」資料庫。
+  3. **Bug C（功能缺失）**：前端存取檢查與後端 `canAccess` 均未實作部門代碼前三碼 prefix 匹配（如 `S182` 用戶可看 `S1800` 文章）及跨部門授權（`UserExtraDepartment`）。
+- **修正檔案**：
+  - `frontend/src/views/ArticleView.vue`
+  - `frontend/src/components/directory/DirectoryTree.vue`
+  - `frontend/src/services/api.js`
+- **修正內容**：
+  - `ArticleView.vue`：
+    - Bug B：`form.hasAccess.部門` 預設值改為 `res.accessDept || ''`，不再 fallback 至登入者部門代碼。
+    - Bug A + C：`loadArticle` 存取判斷改為 OR 邏輯，加入前三碼 prefix 匹配（`uDept.substring(0,3) === rDept.substring(0,3)`）及跨部門授權比對（`myGrantedDepts.value.includes(rDept)`）；人員比對改為 type-safe `String()` 比較。
+    - `onMounted` 增加 `crossDeptService.getMyGrants()` 抓取跨部門授權清單。
+  - `DirectoryTree.vue`：
+    - `checkItemAccess` 部門比對改為三層：精確比對 → 前三碼 prefix 比對 → 跨部門授權比對，與 `ArticleView.vue` 及後端 `canAccess` 邏輯保持一致。
+    - 人員比對改為 type-safe `String()` 比較。
+    - 新增 `onMounted` 抓取 `crossDeptService.getMyGrants()` 填入 `myGrantedDepts`。
+  - `api.js`：新增 `crossDeptService`（`getMyGrants`、`getCreated`、`create`、`remove`）。
+- **驗證方式**：跨部門帳號被加入文章「指定人員」後，切換至其他部門帳號確認可正常讀取文章；前三碼相符部門的用戶也應可存取；左側目錄樹圖示顯示正確（有權限不顯示禁止眼睛）。
+
+---
+
+### [BUG-019] 直接輸入 URL 可繞過存取限制查看全部文章
+- **狀態**：✅ 已修正（2026-05-18）
+- **根本原因**：舊邏輯中 `noRestrict = !rDept && !members.length`，導致任何未設部門、未設人員的文章，不論是否公開，直接輸入 URL 均能以職級門檻通過進入。另外舊邏輯為 AND（所有條件均須符合），與後端 OR 邏輯不一致。權限不符時展示的是長期停留在文章頁的「無權限查看」警告面板，使用體驗很差。
+- **修正檔案**：
+  - `frontend/src/views/ArticleView.vue`
+  - `frontend/src/components/directory/DirectoryTree.vue`
+- **修正內容**：從根本重寫存取判斷邏輯，新邏輯如下：
+  - `is_public=true` → 全員可看，不進行進一步檢查。
+  - 非公開文章：
+    - `指定人員`有値 → **最高優先**，僅名單內帳號可存取。
+    - `指定人員`無値 → 部門代碼前三碼符合（拆包含跨部門授權）可存取。
+    - 上述各項 **AND** 職級門檻剩達（`access_level=10` 代表全員可見，跳過檢查）。
+    - 否則 → `router.push('/') + ElMessage.warning('您沒有存取此文章的權限')`。
+  - 移除 `accessDenied` ref 和 Banner 樣板（改為跳轉）。
+  - `DirectoryTree.vue checkItemAccess` 同步更新，結果為 `primaryAccess && passLevel`。
+- **驗證方式**：切換至沒權限的帳號，直接輸入文章 URL，確認自動跳回首頁並顯示警告訊息。
+
+---
+
+### [BUG-020] 附件存取權限未對齊文章標準
+- **狀態**：✅ 已修正（2026-05-18）
+- **根本原因**：三個複合問題：
+  1. **Bug B（資料污染）**：`loadAttachment` 中 `hasAccess.部門` 預設值為 `res.accessDept || auth.user?.部門代碼 || ''`。附件無部門限制時，會將登入者的部門代碼填入，下次儲存即沙染 `access_dept`，導致其他部門用戶被禁止存取。
+  2. **邏輯錯誤**：`loadAttachment` 存取判斷用舊 AND 邏輯，`!res.accessDept` 讓無部門限制的私有附件對全員放行，且缺少前三碼 prefix 匹配與跨部門授權支援。
+  3. **`isArticleAccessible`**：附件內連結文章的可存取判斷同樣使用舊 AND 邏輯，缺前三碼、跨部門、指定人員優先邏輯。
+- **修正檔案**：`frontend/src/views/AttachmentView.vue`
+- **修正內容**：
+  - **Bug B**：`hasAccess.部門` 預設值改為 `res.accessDept || ''`，移除 fallback `auth.user?.部門代碼`。
+  - **loadAttachment 存取邏輯重寫**：對齊 BUG-019 文章新邏輯——指定人員優先→無指定人員用前三碼+跨部門→ AND 職級；不符則 `router.push('/') + ElMessage.warning`。
+  - **新增 crossDeptService**：import `crossDeptService`，新增 `myGrantedDepts = ref([])`，`onMounted` 呼叫 `getMyGrants()` 填入跨部門授權清單。
+  - **移除 `accessDenied`**：移除 ref 與 Banner 樣板，`v-else-if="!accessDenied"` 改為 `v-else`。
+  - **`isArticleAccessible` 重寫**：同步更新為指定人員優先 → 前三碼+跨部門 → AND 職級的一致邏輯。
+- **驗證方式**：切換至沒權限的帳號，直接輸入附件 URL，確認自動跳回首頁並顯示警告；跨部門授權用戶可正常繁存取附件；左側目錄樹附件圖示顯示正確。

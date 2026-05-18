@@ -101,10 +101,10 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useDirectoryStore } from '@/store/directory.js'
 import { useAuthStore } from '@/store/auth.js'
-import { directoryService } from '@/services/api.js'
+import { directoryService, crossDeptService } from '@/services/api.js'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -122,6 +122,15 @@ const targetParentNode = ref(null)
 const targetParentLabel = computed(() => targetParentNode.value?.label ?? '')
 
 const treeProps = { label: 'label', children: 'children' }
+
+// ─── 跨部門授權 ──────────────────────────────────────────────
+const myGrantedDepts = ref([])
+onMounted(async () => {
+  try {
+    const grants = await crossDeptService.getMyGrants()
+    myGrantedDepts.value = grants.map(g => g.dept_code)
+  } catch { /* 未授權或無資料，忽略 */ }
+})
 
 // ─── 工具：在原始 tree.value 中找節點（非 filteredTree 拷貝）──────
 function findNodeById(nodes, id) {
@@ -209,22 +218,38 @@ function checkItemAccess(data) {
 
   if (isPublic) return true
 
-  // 部門限制
-  if (resource.access_dept && resource.access_dept !== user.部門代碼) return false
-
-  // 人員限制
+  // 解析 access_members
   let accessMembers = resource.access_members
   if (typeof accessMembers === 'string') {
     try { accessMembers = JSON.parse(accessMembers) } catch { accessMembers = [] }
   }
-  if (Array.isArray(accessMembers) && accessMembers.length > 0) {
-    if (!accessMembers.includes(user.員工工號)) return false
+  const members = Array.isArray(accessMembers) ? accessMembers : []
+
+  // 職級門檻：access_level=10 代表全員可見（跳過檢查）
+  const accessLevel = resource.access_level ?? 10
+  const passLevel = accessLevel >= 10 || (user.級職 ?? 99) <= accessLevel
+
+  let primaryAccess = false
+  if (members.length > 0) {
+    // 【最高優先】指定人員：僅名單內帳號可存取
+    primaryAccess = members.map(String).includes(String(user.員工工號))
+  } else {
+    // 無指定人員：依部門代碼前三碼 + 跨部門授權
+    const rDept = resource.access_dept || ''
+    const uDept = user.部門代碼 || ''
+    if (!rDept) {
+      // 無部門限制 → 全員均可存取
+      primaryAccess = true
+    } else {
+      const exactMatch  = uDept === rDept
+      const prefixMatch = uDept.length >= 3 && rDept.length >= 3
+                       && uDept.substring(0, 3) === rDept.substring(0, 3)
+      const crossMatch  = myGrantedDepts.value.includes(rDept)
+      primaryAccess = exactMatch || prefixMatch || crossMatch
+    }
   }
 
-  // 職級限制（數字越小職等越高）
-  if (resource.access_level != null && (user.級職 ?? 99) > resource.access_level) return false
-
-  return true
+  return primaryAccess && passLevel
 }
 
 // ─── 節點點擊 ────────────────────────────────────────────────

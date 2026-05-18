@@ -3,10 +3,21 @@
  */
 const {
   Attachment, AttachmentFile, Tag, AttachmentEditor,
-  AttachmentVersionHistory, Directory, Article, sequelize
+  AttachmentVersionHistory, Directory, Article, UserExtraDepartment, sequelize
 } = require('../models');
 const { canAccess } = require('../helpers/accessHelper');
 const { v4: uuidv4 } = require('uuid');
+
+/**
+ * 取得使用者的跨部門授權代碼清單
+ */
+async function getUserExtraDeptCodes(account) {
+  const grants = await UserExtraDepartment.findAll({
+    where: { account: String(account) },
+    attributes: ['dept_code'],
+  });
+  return grants.map(g => g.dept_code);
+}
 
 // MSSQL 在 transaction 內部錯誤後會自動回滾，再次 ROLLBACK 會拋 error 3903
 async function safeRollback(t) {
@@ -49,12 +60,14 @@ async function getAllAttachments(req, res) {
       order: [['updated_at', 'DESC']],
     });
 
+    const extraDeptCodes = await getUserExtraDeptCodes(req.user.員工工號);
+
     const filtered = attachments.filter(att => {
       if (!att.is_published && req.user.role !== 'ADMIN' && req.user.role !== 'MANAGER') {
         const isEditor = att.Editors.some(e => e.editor_account === req.user.員工工號);
         if (!isEditor) return false;
       }
-      return canAccess(req.user, att);
+      return canAccess(req.user, att, extraDeptCodes);
     });
 
     // B-03: 批次查詢每個附件包的 directoryIds
@@ -96,7 +109,8 @@ async function getAttachmentById(req, res) {
     if (!attachment) {
       return res.status(404).json({ success: false, message: '找不到該附件包' });
     }
-    if (!canAccess(req.user, attachment)) {
+    const extraDeptCodes = await getUserExtraDeptCodes(req.user.員工工號);
+    if (!canAccess(req.user, attachment, extraDeptCodes)) {
       return res.status(403).json({ success: false, message: '您無權存取此附件' });
     }
 
@@ -200,7 +214,16 @@ async function createAttachment(req, res) {
     }
 
     // 6. 目錄捷徑節點（BUG-003 修正：加入 dept_code，讓 getTree 查得到此節點）
+    //    BUG-021 修正：dept_code 從父目錄查得，不用 accessDept 或 user.部門代碼
     if (directoryIds?.length > 0) {
+      const parentDirs = await Directory.findAll({
+        where: { id: directoryIds },
+        attributes: ['id', 'dept_code'],
+        transaction: t,
+      });
+      const deptCodeMap = {};
+      parentDirs.forEach(d => { deptCodeMap[d.id] = d.dept_code; });
+
       await Directory.bulkCreate(
         directoryIds.map(dirId => ({
           id:            `att-${attachment.id}-${dirId}`,
@@ -210,7 +233,7 @@ async function createAttachment(req, res) {
           attachment_id: attachment.id,
           is_public:     isPublic,
           sort_order:    999,
-          dept_code:     accessDept || req.user.部門代碼,
+          dept_code:     deptCodeMap[dirId] || null,
         })),
         { transaction: t }
       );
@@ -332,6 +355,15 @@ async function updateAttachment(req, res) {
 
       const toAdd = directoryIds.filter(pid => !existingParentIds.includes(pid));
       if (toAdd.length > 0) {
+        // BUG-021 修正：dept_code 從父目錄查得，不用 accessDept 或 user.部門代碼
+        const parentDirs = await Directory.findAll({
+          where: { id: toAdd },
+          attributes: ['id', 'dept_code'],
+          transaction: t,
+        });
+        const deptCodeMap = {};
+        parentDirs.forEach(d => { deptCodeMap[d.id] = d.dept_code; });
+
         await Directory.bulkCreate(
           toAdd.map(dirId => ({
             id:            `att-${id}-${dirId}`,
@@ -341,7 +373,7 @@ async function updateAttachment(req, res) {
             attachment_id: id,
             is_public:     isPublic,
             sort_order:    999,
-            dept_code:     accessDept || req.user.部門代碼,
+            dept_code:     deptCodeMap[dirId] || null,
           })),
           { transaction: t }
         );

@@ -3,10 +3,22 @@
  */
 const {
   Article, Tag, ArticleEditor, ArticleVersionHistory,
-  Directory, sequelize
+  Directory, UserExtraDepartment, sequelize
 } = require('../models');
 const { canAccess } = require('../helpers/accessHelper');
 const { Op } = require('sequelize');
+
+/**
+ * 取得使用者的跨部門授權代碼清單
+ * 供 canAccess 判斷跨部門存取權限使用
+ */
+async function getUserExtraDeptCodes(account) {
+  const grants = await UserExtraDepartment.findAll({
+    where: { account: String(account) },
+    attributes: ['dept_code'],
+  });
+  return grants.map(g => g.dept_code);
+}
 
 /**
  * resolveTagIds
@@ -40,6 +52,8 @@ async function safeRollback(t) {
 // ── 取得文章列表 ──────────────────────────────────────────────
 async function getAllArticles(req, res) {
   try {
+    const extraDeptCodes = await getUserExtraDeptCodes(req.user.員工工號);
+
     const articles = await Article.findAll({
       include: [
         { model: Tag,           through: { attributes: [] }, as: 'Tags' },
@@ -53,7 +67,7 @@ async function getAllArticles(req, res) {
         const isEditor = article.Editors.some(e => e.editor_account === req.user.員工工號);
         if (!isEditor) return false;
       }
-      return canAccess(req.user, article);
+      return canAccess(req.user, article, extraDeptCodes);
     });
 
     const articleIds = filtered.map(a => a.id);
@@ -95,7 +109,8 @@ async function getArticleById(req, res) {
     if (!article) {
       return res.status(404).json({ success: false, message: '找不到該文章' });
     }
-    if (!canAccess(req.user, article)) {
+    const extraDeptCodes = await getUserExtraDeptCodes(req.user.員工工號);
+    if (!canAccess(req.user, article, extraDeptCodes)) {
       return res.status(403).json({ success: false, message: '您無權存取此文章' });
     }
 
@@ -146,7 +161,8 @@ async function searchArticles(req, res) {
     }
 
     const articles = await Article.findAll({ where, include });
-    const filtered = articles.filter(a => canAccess(req.user, a));
+    const extraDeptCodes = await getUserExtraDeptCodes(req.user.員工工號);
+    const filtered = articles.filter(a => canAccess(req.user, a, extraDeptCodes));
 
     return res.json({ success: true, data: filtered });
   } catch (error) {

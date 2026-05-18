@@ -5,12 +5,13 @@
 
 /**
  * 判斷使用者是否可存取該資源（文章或附件）
- * 
- * @param {object} user - 當前登入使用者 (req.user)
- * @param {object} resource - 資源物件（需包含權限欄位）
+ *
+ * @param {object}   user           - 當前登入使用者 (req.user)
+ * @param {object}   resource       - 資源物件（需包含權限欄位）
+ * @param {string[]} extraDeptCodes - 使用者的跨部門授權代碼清單（由 UserExtraDepartment 查詢）
  * @returns {boolean}
  */
-function canAccess(user, resource) {
+function canAccess(user, resource, extraDeptCodes = []) {
   // 1. 公開內容：所有人皆可存取
   if (resource.is_public === true || resource.isPublic === true) {
     return true;
@@ -21,12 +22,24 @@ function canAccess(user, resource) {
     return true;
   }
 
-  // 3. 部門限制：屬於指定部門的人員
-  if (resource.access_dept && user.部門代碼 === resource.access_dept) {
-    return true;
-  }
-  if (resource.accessDept && user.部門代碼 === resource.accessDept) {
-    return true;
+  // 3. 部門限制：支援精確比對、前三碼比對、跨部門授權三種方式
+  const rDept = resource.access_dept || resource.accessDept || '';
+  if (rDept) {
+    const uDept = user.部門代碼 || '';
+
+    // 3-a. 精確比對
+    const exactMatch  = uDept === rDept;
+
+    // 3-b. 前三碼相同（例：S1820 可看 S1800、S1810 的文章）
+    const prefixMatch = uDept.length >= 3 && rDept.length >= 3
+                     && uDept.substring(0, 3) === rDept.substring(0, 3);
+
+    // 3-c. 跨部門授權（user_extra_departments 中有此部門代碼）
+    const crossMatch  = extraDeptCodes.includes(rDept);
+
+    if (exactMatch || prefixMatch || crossMatch) {
+      return true;
+    }
   }
 
   // 4. 人員限制：在指定名單內的人員
@@ -34,7 +47,7 @@ function canAccess(user, resource) {
   if (membersRaw) {
     try {
       const members = Array.isArray(membersRaw) ? membersRaw : JSON.parse(membersRaw);
-      if (members.includes(user.員工工號)) {
+      if (members.map(String).includes(String(user.員工工號))) {
         return true;
       }
     } catch (e) {
@@ -45,7 +58,7 @@ function canAccess(user, resource) {
   // 5. 職級限制：職級小於等於指定等級的人員（數字越小職等越高）
   const levelLimit = resource.access_level ?? resource.accessLevel;
   if (levelLimit !== null && levelLimit !== undefined) {
-    if (user.級職 !== null && user.級職 <= levelLimit) {
+    if (user.級職 !== null && user.級職 !== undefined && user.級職 <= levelLimit) {
       return true;
     }
   }
