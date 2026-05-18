@@ -69,7 +69,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/store/auth.js'
 import { useNotificationStore } from '@/store/notification.js'
 import { useDirectoryStore } from '@/store/directory.js'
-import { metaService } from '@/services/api.js'
+import { metaService, crossDeptService } from '@/services/api.js'
 import { useRouter } from 'vue-router'
 
 const auth = useAuthStore()
@@ -96,7 +96,19 @@ async function onCompanyChange(oid) {
   const allDepts = await metaService.getDepartments(oid)
   // 顯示使用者前3碼相同的所有部門
   const userDeptPrefix = auth.user?.部門代碼?.substring(0, 3)
-  departments.value = allDepts.filter(d => userDeptPrefix && d.部門代碼?.startsWith(userDeptPrefix))
+  const prefixDepts = allDepts.filter(d => userDeptPrefix && d.部門代碼?.startsWith(userDeptPrefix))
+
+  // 合併跨部門授權（僅屬於當前選擇公司的）
+  try {
+    const grants = await crossDeptService.getMyGrants()
+    const extraDepts = grants
+      .filter(g => g.org_oid === oid && !prefixDepts.some(d => d.部門代碼 === g.dept_code))
+      .map(g => ({ 部門代碼: g.dept_code, 部門名稱: g.dept_name || g.dept_code }))
+    departments.value = [...prefixDepts, ...extraDepts]
+  } catch {
+    departments.value = prefixDepts
+  }
+
   selectedDept.value = auth.user?.部門代碼 || null
   await dirStore.fetchTree(oid, selectedDept.value)
   router.push('/home')
@@ -120,7 +132,19 @@ onMounted(async () => {
       const allDepts = await metaService.getDepartments(selectedCompany.value)
       // 顯示使用者前3碼相同的所有部門
       const userDeptPrefix = auth.user?.部門代碼?.substring(0, 3)
-      departments.value = allDepts.filter(d => userDeptPrefix && d.部門代碼?.startsWith(userDeptPrefix))
+      const prefixDepts = allDepts.filter(d => userDeptPrefix && d.部門代碼?.startsWith(userDeptPrefix))
+
+      // 合併跨部門授權清單（聯集，去除重複 dept_code）
+      try {
+        const grants = await crossDeptService.getMyGrants()
+        const extraDepts = grants
+          .filter(g => !prefixDepts.some(d => d.部門代碼 === g.dept_code))
+          .map(g => ({ 部門代碼: g.dept_code, 部門名稱: g.dept_name || g.dept_code }))
+        departments.value = [...prefixDepts, ...extraDepts]
+      } catch {
+        // 跨部門授權取得失敗時，退回只顯示前三碼篩選結果
+        departments.value = prefixDepts
+      }
     }
   } catch {
     // 靜默失敗

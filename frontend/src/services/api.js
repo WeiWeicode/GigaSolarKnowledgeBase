@@ -730,4 +730,40 @@ export const attachmentVersionService = {
 }
 
 
+// ============================================================
+// Cross Department Service（跨部門授權）
+// ============================================================
+export const crossDeptService = {
+  /** 取得當前使用者被授權的跨部門清單（任何角色都可呼叫） */
+  async getMyGrants() {
+    const res = await http.get('/cross-departments/my-grants')
+    return res.data   // [{ id, account, org_oid, dept_code, dept_name, created_by, created_at }]
+  },
+
+  /** 取得當前 MANAGER 自己建立的授權紀錄（僅 MANAGER） */
+  async getCreated() {
+    const res = await http.get('/cross-departments/created')
+    return res.data
+  },
+
+  /**
+   * 新增跨部門授權（僅 MANAGER）
+   * @param {string} account   - 被授權同仁工號
+   * @param {string} org_oid   - 目標公司 OID
+   * @param {string} dept_code - 目標部門代碼
+   * @param {string} dept_name - 目標部門名稱
+   */
+  async create({ account, org_oid, dept_code, dept_name }) {
+    const res = await http.post('/cross-departments', { account, org_oid, dept_code, dept_name })
+    return res.data
+  },
+
+  /** 刪除跨部門授權（只能刪自己建立的，僅 MANAGER） */
+  async remove(id) {
+    const res = await http.delete(`/cross-departments/${id}`)
+    return res.data
+  },
+}
+
+
 export default http

@@ -7,7 +7,7 @@ const express = require('express');
 const cors    = require('cors');
 
 const { initKBPool, initNaNaPool, closeAllPools } = require('./config/db');
-const { sequelize } = require('./models');
+const { sequelize, UserExtraDepartment } = require('./models');
 const { seedIfEmpty } = require('./scripts/seedDirectories');
 
 const app  = express();
@@ -36,7 +36,8 @@ app.use(`${API}/directories`,   require('./routes/directories'));
 app.use(`${API}/articles`,      require('./routes/articles'));
 app.use(`${API}/attachments`,   require('./routes/attachments'));
 app.use(`${API}/comments`,      require('./routes/comments_standalone'));
-app.use(`${API}/notifications`, require('./routes/notifications'));
+app.use(`${API}/notifications`,      require('./routes/notifications'));
+app.use(`${API}/cross-departments`,  require('./routes/crossDepartments'));
 
 // ── 404 ───────────────────────────────────────────────────────
 app.use((req, res) => {
@@ -68,6 +69,10 @@ async function startServer() {
     console.log('\n🔄 Sequelize 驗證連線...');
     await sequelize.authenticate();
     console.log('✅ Sequelize 連線驗證成功');
+
+    // 2.1 自動建立新增的 Table（不影響既有資料表）
+    await UserExtraDepartment.sync({ force: false });
+    console.log('✅ user_extra_departments 資料表已就緒');
 
     // 3. 目錄樹種子資料（directories 表為空時自動初始化）
     console.log('');

@@ -13,6 +13,7 @@ const Comment                  = require('./Comment');
 const Notification             = require('./Notification');
 const UserToken  = require('./UserToken');
 const UserRole   = require('./UserRole');
+const UserExtraDepartment = require('./UserExtraDepartment');
 
 // ── 中間表 Model（定義在此，不另開檔案）─────────────────────
 
@@ -131,4 +132,5 @@ module.exports = {
   Notification,
   UserToken,
   UserRole,
+  UserExtraDepartment,
 };
