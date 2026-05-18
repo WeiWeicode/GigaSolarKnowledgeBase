@@ -94,8 +94,9 @@ const roleTagType = computed(() => ({
 
 async function onCompanyChange(oid) {
   const allDepts = await metaService.getDepartments(oid)
-  // 只顯示使用者自己的部門
-  departments.value = allDepts.filter(d => d.部門代碼 === auth.user?.部門代碼)
+  // 顯示使用者前3碼相同的所有部門
+  const userDeptPrefix = auth.user?.部門代碼?.substring(0, 3)
+  departments.value = allDepts.filter(d => userDeptPrefix && d.部門代碼?.startsWith(userDeptPrefix))
   selectedDept.value = auth.user?.部門代碼 || null
   await dirStore.fetchTree(oid, selectedDept.value)
   router.push('/home')
@@ -117,8 +118,9 @@ onMounted(async () => {
     companies.value = await metaService.getCompanies()
     if (selectedCompany.value) {
       const allDepts = await metaService.getDepartments(selectedCompany.value)
-      // 只顯示使用者自己的部門
-      departments.value = allDepts.filter(d => d.部門代碼 === auth.user?.部門代碼)
+      // 顯示使用者前3碼相同的所有部門
+      const userDeptPrefix = auth.user?.部門代碼?.substring(0, 3)
+      departments.value = allDepts.filter(d => userDeptPrefix && d.部門代碼?.startsWith(userDeptPrefix))
     }
   } catch {
     // 靜默失敗

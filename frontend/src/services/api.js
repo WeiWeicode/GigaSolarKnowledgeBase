@@ -102,7 +102,13 @@ function normalizeArticle(a) {
     isPublished:   a.is_published,
     isPublic:      a.is_public,
     accessDept:    a.access_dept,
-    accessMembers: a.access_members,
+    // BUG-017: access_members 在 MSSQL 以 JSON 字串儲存，需解析為陣列
+    accessMembers: (() => {
+      const raw = a.access_members
+      if (Array.isArray(raw)) return raw
+      if (typeof raw === 'string') { try { return JSON.parse(raw) } catch { return [] } }
+      return []
+    })(),
     accessLevel:   a.access_level,
     versionNumber: a.version_number,
     createdBy:     a.created_by,

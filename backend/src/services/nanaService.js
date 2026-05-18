@@ -73,7 +73,7 @@ const BASE_EMPLOYEE_SQL = `
 function rowToUser(row) {
   // 角色推導：級職 < 6 → MANAGER，其餘 → MEMBER
   // 測試先用9
-  const role = row.職級 != null && row.職級 < 9 ? 'MANAGER' : 'MEMBER';
+  const role = row.職級 != null && row.職級 <= 6 ? 'MANAGER' : 'MEMBER';
 
   return {
     組織名稱:     row.組織名稱     || '',
@@ -152,6 +152,7 @@ async function getAllColleagues() {
       WHERE
         Fun.isMain = 1
         AND org.organizationName = '碩禾電子材料'
+        AND ( EFGP_USER.leaveDate IS NULL )
       ORDER BY EFGP_USER.id
     `;
 

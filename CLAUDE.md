@@ -269,4 +269,5 @@ node src/scripts/seedDirectories.js
 - 若新增功能牽涉前後端，需同時確認 API contract、後端 route/controller/service/model、前端 service/store/view。
 - 若無法執行驗證，需在回覆中明確說明原因與建議的手動驗證方式。
 - 修改後需要更新`FRONTEND_PENDING.md` / `BACKEND_PENDING.md`。
+- 新增與修改需求，需要更新`INCREASEDEMAND.md`。
 - 不要隨意修改功能與架構。

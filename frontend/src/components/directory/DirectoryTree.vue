@@ -196,29 +196,33 @@ function checkItemAccess(data) {
   if (auth.isAdmin) return true
   const user = auth.user; if (!user) return true
 
-  // 欄位直接從目錄樹節點讀取（後端 Directory model 上有 is_public / access_* 鏡像欄位）
-  const isPublic     = data.is_public
-  const accessDept   = data.access_dept
-  const accessLevel  = data.access_level
+  // BUG-016：Directory model 本身不含 access_dept/level/members，
+  // 實際權限資料在 getTree include 的已巢狀 Article / Attachment 物件中
+  const resource = (data.type === 'article'    ? data.Article    : null)
+                || (data.type === 'attachment' ? data.Attachment : null)
+  if (!resource) return true  // 非文件節點或無關聯資料，一律允許
 
-  // access_members 後端以 JSON 字串儲存，需解析
-  let accessMembers = data.access_members
-  if (typeof accessMembers === 'string') {
-    try { accessMembers = JSON.parse(accessMembers) } catch { accessMembers = [] }
-  }
+  const isPublic = resource.is_public === true || resource.is_public === 1
+
+  // 公開瀏覽模式：非公開文件一律不可見
+  if (dirStore.viewScope === 'public' && !isPublic) return false
 
   if (isPublic) return true
 
-  // 部門權限
-  if (accessDept && accessDept !== user.部門代碼) return false
+  // 部門限制
+  if (resource.access_dept && resource.access_dept !== user.部門代碼) return false
 
-  // 人員權限
+  // 人員限制
+  let accessMembers = resource.access_members
+  if (typeof accessMembers === 'string') {
+    try { accessMembers = JSON.parse(accessMembers) } catch { accessMembers = [] }
+  }
   if (Array.isArray(accessMembers) && accessMembers.length > 0) {
     if (!accessMembers.includes(user.員工工號)) return false
   }
 
-  // 職級權限（數字越小職等越高）
-  if (accessLevel != null && (user.級職 ?? 99) > accessLevel) return false
+  // 職級限制（數字越小職等越高）
+  if (resource.access_level != null && (user.級職 ?? 99) > resource.access_level) return false
 
   return true
 }

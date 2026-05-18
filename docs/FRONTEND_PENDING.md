@@ -140,3 +140,21 @@
   - `api.js` `normalizeAttachment`：f.url 改用 `/api/v1/attachments/files/${f.uuid}/download`
   - `AttachmentView.vue`：下載按鈕改用 `handleDownload(f)` JS 函式，透過 `fetch` + JWT header 呼叫 download endpoint
 - **驗證方式**：點擊附件下載按鈕，確認瀏覽器下載的檔名為原始檔名（如 `程式系統.pdf`），而非時戳殆隨機數編碼
+
+---
+
+### [BUG-016] 側邊欄無權限文章未顯示禁止眼睛 icon
+- **狀態**：✅ 已修正（2026-05-18）
+- **根本原因**：`checkItemAccess()` 讀取的是 Directory 節點本身的欄位（`data.access_dept`、`data.access_level`、`data.access_members`），但 `directories` 資料表根本沒有這三個欄位，導致讀到的全是 `undefined`。權限判斷所有條件均被跳過，最終一律回傳 `true`（有權限），造成 Hide icon 永遠不顯示。實際權限資料已由 `getTree` 的 `include` 嵌套於 `data.Article` / `data.Attachment` 物件中，卻未被使用。
+- **修正檔案**：`frontend/src/components/directory/DirectoryTree.vue`
+- **修正內容**：`checkItemAccess()` 改為從 `data.Article`（文章節點）或 `data.Attachment`（附件節點）讀取權限欄位，匹配 `ArticleView.vue` 中 `loadArticle` 的前端權限檢查邏輯（部門限制、人員限制、職級限制）。附加效果：點擊無權限文件時改為顯示警告訊息並阻止導航，而非跳入文章頁顯示「無權限查看」頁面。
+- **驗證方式**：對有職級門檻或人員限制的文章，確認左側樹狀節點顯示紅色禁止眼睛 icon，且點擊後出現警告訊息而非進入文章。
+
+---
+
+### [BUG-017] 文章編輯「存取權限 – 指定人員」未帶入原始值
+- **狀態**：✅ 已修正（2026-05-18）
+- **根本原因**：`normalizeArticle` 在 `api.js` 中將 `access_members` 直接透傳，未解析 MSSQL 儲存的 JSON 字串（如 `'["S1800","S1801"]'`）。`loadArticle` 在 `ArticleView.vue` 中以 `Array.isArray(res.accessMembers)` 判斷，字串不是陣列 → 一律設為 `[]`，造成指定人員清單每次進入編輯時歸零。
+- **修正檔案**：`frontend/src/services/api.js`
+- **修正內容**：`normalizeArticle` 的 `accessMembers` 欄位改為 IIFE 解析：若已是陣列直接使用，若為字串則 `JSON.parse`，解析失敗回傳 `[]`。
+- **驗證方式**：設定文章「存取權限 – 指定人員」後儲存，重新進入編輯確認人員清單仍顯示原始設定值，且 Request Payload 中 `accessMembers` 非空陣列。
