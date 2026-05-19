@@ -204,6 +204,19 @@
 
 ---
 
+### [BUG-022] 附件沒權限時在左側目錄樹消失，應顯示禁止眼睛圖示
+- **狀態**：✅ 已修正（2026-05-19）
+- **根本原因**：`directoryController.js` `getTree` 對 `attachment` 節點呼叫 `canAccess` 判斷存取，失敗時直接將整筆節點過濾掉。前端收不到資料就無法顯示禁止眼睛。存取權限應只顯示在內容頁面，左側目錄應一律出現所有已發佈項目。
+  附加問題：`getTree` 並未將 `extraDeptCodes` 傳入 `canAccess`，跨部門授權用戶即便有權限也會被過濾。
+- **修正檔案**：`backend/src/controllers/directoryController.js`
+- **修正內容**：
+  - `getTree` `filteredRows` 移除對 `article` / `attachment` 的 `canAccess` 呼叫，改為僅以 `is_published`（加上 ADMIN/MANAGER 可看未發佈）判斷。
+  - 存取判斷全數交由前端 `checkItemAccess` 處理（無權限顯示禁止眼睛 icon，點擊時顯示警告）。
+  - 移除已無使用的 `canAccess` import。
+- **驗證方式**：用除 ADMIN 外的帳號去看設了職級限制的附件，确認左側目錄樹仍出現附件且顯示禁止眼睛圖示；點擊時顯示「目前無存取該文件的權限」警告。
+
+---
+
 ### [BUG-020] 附件存取權限未對齊文章標準
 - **狀態**：✅ 已修正（2026-05-18）
 - **根本原因**：三個複合問題：

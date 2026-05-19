@@ -4,7 +4,6 @@
  */
 const { Directory, Article, Attachment, sequelize } = require('../models');
 const { buildTree } = require('../helpers/treeHelper');
-const { canAccess } = require('../helpers/accessHelper');
 const { Op } = require('sequelize');
 
 /**
@@ -37,24 +36,26 @@ async function getTree(req, res) {
       order: [['sort_order', 'ASC']]
     });
 
-    // 權限過濾：過濾掉使用者無權存取的文章或附件節點
+    // 過濾規則：
+    // - 文章 / 附件：已發佈才顯示（ADMIN / MANAGER 可看未發佈）
+    //   存取權限交給前端 checkItemAccess 處理（沒有權限顯示禁止眼睛 icon，不直接隱藏）
+    //   不在此呼叫 canAccess，避免 getTree 沒有傳入 extraDeptCodes 導致跨部門用戶
+    //   看不到自己有授權的項目，且符合「就算沒權限也要出現」的 UI 設計
+    // - 其他節點（directory、department 等）：一律顯示
+    const isManager = req.user.role === 'ADMIN' || req.user.role === 'MANAGER';
     const filteredRows = rows.filter(row => {
       if (row.type === 'article') {
-        if (!row.Article) return false; // 文章不存在
-        if (!row.Article.is_published && req.user.role !== 'ADMIN' && req.user.role !== 'MANAGER') {
-          return false; // 未發佈且非管理職
-        }
-        return canAccess(req.user, row.Article);
+        if (!row.Article) return false;
+        if (!row.Article.is_published && !isManager) return false;
+        return true;
       }
-      
+
       if (row.type === 'attachment') {
-        if (!row.Attachment) return false; // 附件不存在
-        if (!row.Attachment.is_published && req.user.role !== 'ADMIN' && req.user.role !== 'MANAGER') {
-          return false; // 未發佈且非管理職
-        }
-        return canAccess(req.user, row.Attachment);
+        if (!row.Attachment) return false;
+        if (!row.Attachment.is_published && !isManager) return false;
+        return true;
       }
-      
+
       return true; // 目錄節點預設顯示
     });
 
