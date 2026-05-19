@@ -122,9 +122,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNotificationStore } from '@/store/notification.js'
+import { useDirectoryStore } from '@/store/directory.js'
+import { useAuthStore } from '@/store/auth.js'
 import { articleService, tagService } from '@/services/api.js'
 import { timeAgo, formatDateTime } from '@/utils/dateFormat.js'
 import AiChatPanel from '@/components/panels/AiChatPanel.vue'
@@ -132,6 +134,8 @@ import { ElMessage } from 'element-plus'
 
 const router = useRouter()
 const notifStore = useNotificationStore()
+const dirStore = useDirectoryStore()
+const auth = useAuthStore()
 
 const keyword = ref('')
 const selectedTags = ref([])
@@ -145,10 +149,42 @@ let searchTimer = null
 const unread = computed(() => notifStore.unread)
 const read = computed(() => notifStore.read)
 
+/**
+ * 依當前模式載入對應的標籤列表
+ * - public 模式：只載 is_public=true，依熱度排序
+ * - dept 模式：預載 departments 包含當前部門的標籤，依自訂順序
+ */
+async function loadTags() {
+  try {
+    const scope    = dirStore.viewScope         // 'public' | 'dept'
+    const deptCode = dirStore.currentDept || auth.user?.['部門代碼']
+    tags.value = await tagService.getAll(scope, scope === 'dept' ? deptCode : undefined)
+  } catch {
+    // 標籤載入失敗不影響主要功能，靜默失敗
+  }
+}
+
+// scope 或部門切換時重新載入標籤，带清除已勾選項目
+watch(
+  [() => dirStore.viewScope, () => dirStore.currentDept],
+  () => {
+    selectedTags.value = []
+    loadTags()
+  }
+)
+
 function toggleTag(id) {
   const idx = selectedTags.value.indexOf(id)
-  if (idx >= 0) selectedTags.value.splice(idx, 1)
-  else selectedTags.value.push(id)
+  const isSelecting = idx < 0
+  if (isSelecting) {
+    selectedTags.value.push(id)
+    // 公開模式下點選 tag 累加熱度（fire-and-forget，不阻塞 UI）
+    if (dirStore.viewScope === 'public') {
+      tagService.incrementClick(id).catch(() => {})
+    }
+  } else {
+    selectedTags.value.splice(idx, 1)
+  }
   onSearch()
 }
 
@@ -182,11 +218,7 @@ async function markRead(id) {
 }
 
 onMounted(async () => {
-  try {
-    tags.value = await tagService.getAll()
-  } catch {
-    // 標籤載入失敗不影響主要功能，靜默失敗
-  }
+  await loadTags()
   try {
     await notifStore.fetchAll()
   } catch {

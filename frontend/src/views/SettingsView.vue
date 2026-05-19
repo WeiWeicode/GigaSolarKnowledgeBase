@@ -53,6 +53,165 @@
         </div>
       </el-tab-pane>
 
+      <!-- 標籤管理（僅 MANAGER） -->
+      <el-tab-pane v-if="auth.role === 'MANAGER'" label="標籤管理" name="tagsMgmt">
+        <div class="kb-card settings-card">
+          <h3 class="card-title">新增標籤</h3>
+          <div class="grant-form-row" style="align-items: flex-end; margin-bottom: 0;">
+            <div class="field-group" style="margin-bottom:0">
+              <label class="field-label">標籤名稱</label>
+              <el-input v-model="newTagForm.name" placeholder="請輸入標籤名稱" style="width: 160px" />
+            </div>
+            <div class="field-group" style="margin-bottom:0">
+              <label class="field-label">所屬部門</label>
+              <el-select
+                v-model="newTagForm.departments"
+                multiple
+                filterable
+                collapse-tags
+                placeholder="選擇部門（空 = 不顯示於部門模式）"
+                style="width: 260px"
+              >
+                <el-option
+                  v-for="d in tagAvailDepts"
+                  :key="d.value"
+                  :label="d.label"
+                  :value="d.value"
+                />
+              </el-select>
+            </div>
+            <div class="field-group" style="margin-bottom:0">
+              <label class="field-label">自訂順序</label>
+              <el-input-number v-model="newTagForm.customOrder" :min="0" :step="1" controls-position="right" style="width: 110px" />
+            </div>
+            <div class="field-group" style="margin-bottom:0">
+              <label class="field-label">公開標籤</label>
+              <el-switch v-model="newTagForm.isPublic" />
+            </div>
+            <el-button
+              type="primary"
+              :loading="tagCreating"
+              :disabled="!newTagForm.name.trim()"
+              @click="handleTagCreate"
+            >
+              新增
+            </el-button>
+          </div>
+        </div>
+
+        <!-- 標籤列表 -->
+        <div class="kb-card settings-card" style="margin-top: 16px;">
+          <h3 class="card-title">標籤列表</h3>
+          <el-table
+            :data="allTags"
+            v-loading="tagsMgmtLoading"
+            empty-text="尚未建立任何標籤"
+            size="small"
+          >
+            <!-- 標籤名稱 -->
+            <el-table-column label="標籤名稱" min-width="120">
+              <template #default="{ row }">
+                <el-input
+                  v-if="editingId === row.id"
+                  v-model="editingForm.name"
+                  size="small"
+                  style="width: 120px"
+                />
+                <span v-else>{{ row.name }}</span>
+              </template>
+            </el-table-column>
+
+            <!-- 所屬部門 -->
+            <el-table-column label="所屬部門" min-width="220">
+              <template #default="{ row }">
+                <el-select
+                  v-if="editingId === row.id"
+                  v-model="editingForm.departments"
+                  multiple
+                  filterable
+                  collapse-tags
+                  size="small"
+                  style="width: 200px"
+                  placeholder="空 = 不顯示於部門模式"
+                >
+                  <el-option
+                    v-for="d in tagAvailDepts"
+                    :key="d.value"
+                    :label="d.label"
+                    :value="d.value"
+                  />
+                </el-select>
+                <template v-else>
+                  <el-tag
+                    v-for="deptCode in row.departments"
+                    :key="deptCode"
+                    size="small"
+                    style="margin-right: 4px"
+                  >
+                    {{ deptLabel(deptCode) }}
+                  </el-tag>
+                  <span v-if="!row.departments?.length" style="color: var(--color-text-muted); font-size: 12px;">未設定</span>
+                </template>
+              </template>
+            </el-table-column>
+
+            <!-- 自訂順序 -->
+            <el-table-column label="自訂順序" width="110" align="center">
+              <template #default="{ row }">
+                <el-input-number
+                  v-if="editingId === row.id"
+                  v-model="editingForm.customOrder"
+                  :min="0" :step="1"
+                  controls-position="right"
+                  size="small"
+                  style="width: 90px"
+                />
+                <span v-else>{{ row.customOrder }}</span>
+              </template>
+            </el-table-column>
+
+            <!-- 公開標籤 -->
+            <el-table-column label="公開標籤" width="90" align="center">
+              <template #default="{ row }">
+                <el-switch
+                  v-if="editingId === row.id"
+                  v-model="editingForm.isPublic"
+                  size="small"
+                />
+                <el-tag
+                  v-else
+                  :type="row.isPublic ? 'success' : 'info'"
+                  size="small"
+                >
+                  {{ row.isPublic ? '公開' : '未公開' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+
+            <!-- 點擊次數 -->
+            <el-table-column label="熱度" width="70" align="center">
+              <template #default="{ row }">
+                <span style="font-size: 12px; color: var(--color-text-muted);">{{ row.clickCount }}</span>
+              </template>
+            </el-table-column>
+
+            <!-- 操作 -->
+            <el-table-column label="操作" width="140" fixed="right">
+              <template #default="{ row }">
+                <template v-if="editingId === row.id">
+                  <el-button type="primary" size="small" text :loading="tagSaving" @click="handleTagSave(row)">儲存</el-button>
+                  <el-button size="small" text @click="cancelTagEdit">取消</el-button>
+                </template>
+                <template v-else>
+                  <el-button size="small" text @click="startTagEdit(row)">編輯</el-button>
+                  <el-button type="danger" size="small" text @click="handleTagDelete(row)">刪除</el-button>
+                </template>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </el-tab-pane>
+
       <!-- Cross-Department Management（僅 MANAGER） -->
       <el-tab-pane v-if="auth.role === 'MANAGER'" label="跨部門管理" name="crossDept">
         <div class="kb-card settings-card">
@@ -177,7 +336,7 @@
 import { ref, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/store/auth.js'
-import { metaService, crossDeptService, colleagueService } from '@/services/api.js'
+import { metaService, crossDeptService, colleagueService, tagService } from '@/services/api.js'
 
 const auth = useAuthStore()
 const user = computed(() => auth.user)
@@ -291,9 +450,140 @@ async function loadCreatedGrants() {
   }
 }
 
-// 切換到跨部門 Tab 時才載入資料（懶載入，避免無謂的 API 呼叫）
+// ── 標籤管理（僅 MANAGER） ──────────────────────────────────
+const allTags          = ref([])
+const tagsMgmtLoading  = ref(false)
+const tagsMgmtLoaded   = ref(false)
+
+// 可選部門（標籤綁定用）
+const tagAvailDepts    = ref([])   // [{ label: '部門名稱（代碼）', value: 'deptCode' }]
+const deptCodeLabelMap = ref({})   // { deptCode: '部門名稱（代碼）' }
+
+function deptLabel(deptCode) {
+  return deptCodeLabelMap.value[deptCode] || deptCode
+}
+
+// 新增表單
+const newTagForm = ref({ name: '', departments: [], customOrder: 0, isPublic: false })
+const tagCreating = ref(false)
+
+// 行內編輯狀態
+const editingId   = ref(null)
+const editingForm = ref({ name: '', departments: [], customOrder: 0, isPublic: false })
+const tagSaving   = ref(false)
+
+function startTagEdit(row) {
+  editingId.value   = row.id
+  editingForm.value = {
+    name:        row.name,
+    departments: Array.isArray(row.departments) ? [...row.departments] : [],
+    customOrder: row.customOrder ?? 0,
+    isPublic:    row.isPublic ?? false,
+  }
+}
+
+function cancelTagEdit() {
+  editingId.value = null
+}
+
+async function loadAllTags() {
+  try {
+    tagsMgmtLoading.value = true
+    allTags.value = await tagService.getAll()  // 無 scope = 管理介面取全部
+  } catch {
+    ElMessage.error('載入標籤列表失敗')
+  } finally {
+    tagsMgmtLoading.value = false
+  }
+}
+
+async function loadTagDepts() {
+  // 載入用戶所屬公司的所有部門（供標籤綁定選擇）
+  if (tagAvailDepts.value.length > 0) return
+  try {
+    const depts = await metaService.getDepartments(user.value?.['組織OID'])
+    const map = {}
+    tagAvailDepts.value = depts.map(d => {
+      const label = `${d.部門名稱}（${d.部門代碼}）`
+      map[d.部門代碼] = label
+      return { label, value: d.部門代碼 }
+    })
+    deptCodeLabelMap.value = map
+  } catch {
+    // 部門載入失敗不阻止標籤功能
+  }
+}
+
+async function handleTagCreate() {
+  const name = newTagForm.value.name.trim()
+  if (!name) return ElMessage.warning('標籤名稱不能為空')
+  try {
+    tagCreating.value = true
+    await tagService.create({
+      name,
+      departments: newTagForm.value.departments,
+      customOrder: newTagForm.value.customOrder,
+      isPublic:    newTagForm.value.isPublic,
+    })
+    ElMessage.success('標籤已新增')
+    newTagForm.value = { name: '', departments: [], customOrder: 0, isPublic: false }
+    await loadAllTags()
+  } catch (e) {
+    ElMessage.error(e?.message || '新增失敗')
+  } finally {
+    tagCreating.value = false
+  }
+}
+
+async function handleTagSave(row) {
+  try {
+    tagSaving.value = true
+    await tagService.update(row.id, {
+      name:        editingForm.value.name.trim(),
+      departments: editingForm.value.departments,
+      customOrder: editingForm.value.customOrder,
+      isPublic:    editingForm.value.isPublic,
+    })
+    ElMessage.success('標籤已更新')
+    editingId.value = null
+    await loadAllTags()
+  } catch (e) {
+    ElMessage.error(e?.message || '更新失敗')
+  } finally {
+    tagSaving.value = false
+  }
+}
+
+async function handleTagDelete(row) {
+  try {
+    await ElMessageBox.confirm(
+      `確定要刪除標籤「${row.name}」嗎？`,
+      '刪除確認',
+      { confirmButtonText: '刪除', cancelButtonText: '取消', type: 'warning' }
+    )
+    await tagService.remove(row.id)
+    ElMessage.success('標籤已刪除')
+    if (editingId.value === row.id) editingId.value = null
+    await loadAllTags()
+  } catch (e) {
+    if (e === 'cancel') return
+    ElMessage.error(e?.message || '刪除失敗')
+  }
+}
+
+// 切換 Tab 時懶載入資料
 watch(activeTab, async (tab) => {
-  if (tab !== 'crossDept' || auth.role !== 'MANAGER') return
+  if (auth.role !== 'MANAGER') return
+
+  // 標籤管理 Tab
+  if (tab === 'tagsMgmt' && !tagsMgmtLoaded.value) {
+    tagsMgmtLoaded.value = true
+    await Promise.all([loadAllTags(), loadTagDepts()])
+    return
+  }
+
+  // 跨部門 Tab
+  if (tab !== 'crossDept') return
 
   if (colleagues.value.length === 0) {
     try {

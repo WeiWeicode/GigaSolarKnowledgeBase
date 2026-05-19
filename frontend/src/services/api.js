@@ -270,25 +270,61 @@ export const colleagueService = {
 // Tag Service
 // ============================================================
 export const tagService = {
-  async getAll() {
+  /**
+   * 取得標籤列表
+   * @param {string} [scope]    - 'public' | 'dept' | 無（管理介面全部）
+   * @param {string} [deptCode] - scope='dept' 時必填
+   */
+  async getAll(scope, deptCode) {
     if (USE_MOCK) { await delay(150); return mockTags }
 
-    // GET /api/v1/tags
-    const res = await http.get('/tags')
+    // GET /api/v1/tags?scope=xxx&deptCode=xxx
+    const params = {}
+    if (scope)    params.scope    = scope
+    if (deptCode) params.deptCode = deptCode
+    const res = await http.get('/tags', { params })
     return res.data  // Tag[]
   },
 
-  async create(name) {
+  /**
+   * 新增標籤
+   * @param {{ name: string, departments?: string[], customOrder?: number, isPublic?: boolean }} data
+   */
+  async create(data) {
     if (USE_MOCK) {
       await delay(200)
-      const t = { id: Date.now(), name }; mockTags.push(t); return t
+      const t = { id: Date.now(), name: data.name || data, departments: [], customOrder: 0, clickCount: 0, isPublic: false }
+      mockTags.push(t); return t
     }
 
     // POST /api/v1/tags
-    const res = await http.post('/tags', { name })
+    // 後小小相容：若傳入的是純字串（舊呼叫方式），包裝為物件
+    const body = typeof data === 'string' ? { name: data } : data
+    const res = await http.post('/tags', body)
     return res.data  // Tag
   },
 
+  /**
+   * 更新標籤
+   * @param {number} id
+   * @param {{ name?: string, departments?: string[], customOrder?: number, isPublic?: boolean }} data
+   */
+  async update(id, data) {
+    if (USE_MOCK) {
+      await delay(200)
+      const t = mockTags.find(t => t.id === id)
+      if (t) Object.assign(t, data)
+      return t
+    }
+
+    // PATCH /api/v1/tags/:id
+    const res = await http.patch(`/tags/${id}`, data)
+    return res.data  // Tag
+  },
+
+  /**
+   * 刪除標籤
+   */
   async remove(id) {
     if (USE_MOCK) {
       await delay(200)
@@ -300,6 +336,18 @@ export const tagService = {
     // DELETE /api/v1/tags/:id
     const res = await http.delete(`/tags/${id}`)
     return res  // { success, message }
+  },
+
+  /**
+   * 累加點擊次數（公開模式下 tag chip 被點選時呼叫）
+   * @param {number} id
+   */
+  async incrementClick(id) {
+    if (USE_MOCK) { await delay(50); return { success: true } }
+
+    // POST /api/v1/tags/:id/click
+    const res = await http.post(`/tags/${id}/click`)
+    return res  // { success, data: { id, click_count } }
   },
 }
 

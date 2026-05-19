@@ -7,7 +7,7 @@ const express = require('express');
 const cors    = require('cors');
 
 const { initKBPool, initNaNaPool, closeAllPools } = require('./config/db');
-const { sequelize, UserExtraDepartment } = require('./models');
+const { sequelize, UserExtraDepartment, Tag } = require('./models');
 const { seedIfEmpty } = require('./scripts/seedDirectories');
 
 const app  = express();
@@ -73,6 +73,25 @@ async function startServer() {
     // 2.1 自動建立新增的 Table（不影響既有資料表）
     await UserExtraDepartment.sync({ force: false });
     console.log('✅ user_extra_departments 資料表已就緒');
+
+    // 2.2 Tags 表擴欄（新增 departments / custom_order / click_count / is_public）
+    //     使用原生 SQL 逐欄判斷，避免 Sequelize alter:true 在 MSSQL UNIQUE 語法問題
+    const addTagColIfMissing = async (col, ddl) => {
+      await sequelize.query(`
+        IF NOT EXISTS (
+          SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_NAME = 'tags' AND COLUMN_NAME = '${col}'
+        )
+        BEGIN
+          ALTER TABLE tags ADD ${ddl}
+        END
+      `);
+    };
+    await addTagColIfMissing('departments',  'departments  NVARCHAR(MAX) NULL');
+    await addTagColIfMissing('custom_order', 'custom_order INT NOT NULL DEFAULT 0');
+    await addTagColIfMissing('click_count',  'click_count  INT NOT NULL DEFAULT 0');
+    await addTagColIfMissing('is_public',    'is_public    BIT NOT NULL DEFAULT 0');
+    console.log('✅ tags 資料表已就緒（含新增欄位）');
 
     // 3. 目錄樹種子資料（directories 表為空時自動初始化）
     console.log('');
