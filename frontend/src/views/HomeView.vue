@@ -5,15 +5,18 @@
       <h2 class="search-heading">搜尋知識庫</h2>
       <div class="search-row">
         <div class="search-input-wrap">
-          <el-input
-            v-model="keyword"
-            placeholder="輸入關鍵字搜尋文章標題或內文..."
-            size="large"
-            clearable
-            prefix-icon="Search"
-            class="search-input"
-            @input="onSearch"
-          />
+          <div style="display: flex; gap: 8px;">
+            <el-input
+              v-model="keyword"
+              placeholder="輸入關鍵字搜尋文章標題或內文..."
+              size="large"
+              clearable
+              prefix-icon="Search"
+              class="search-input"
+              @input="onSearch"
+            />
+            <el-button size="large" @click="clearSearch">重置搜尋</el-button>
+          </div>
           <div class="tag-filter">
             <span class="filter-label">標籤：</span>
             <el-check-tag
@@ -40,8 +43,13 @@
         </div>
         <template v-else>
           <p class="results-count">找到 {{ searchResults.length }} 筆結果</p>
-          <div v-for="r in searchResults" :key="r.id" class="result-item" @click="$router.push(`/article/${r.id}`)">
-            <div class="result-title">{{ r.title }}</div>
+          <div v-for="r in searchResults" :key="r.itemType + '-' + r.id" class="result-item" @click="goToResult(r)">
+            <div class="result-title">
+              <el-tag size="small" :type="r.itemType === 'article' ? 'primary' : 'success'" class="mr-2" style="margin-right: 8px;">
+                {{ r.itemType === 'article' ? '文章' : '附件' }}
+              </el-tag>
+              {{ r.title }}
+            </div>
             <div class="result-meta">
               <el-tag v-for="t in r.tags" :key="t.id" size="small" class="result-tag">{{ t.name }}</el-tag>
               <span class="result-date">更新：{{ formatDateTime(r.updatedAt) }}</span>
@@ -127,7 +135,7 @@ import { useRouter } from 'vue-router'
 import { useNotificationStore } from '@/store/notification.js'
 import { useDirectoryStore } from '@/store/directory.js'
 import { useAuthStore } from '@/store/auth.js'
-import { articleService, tagService } from '@/services/api.js'
+import { articleService, attachmentService, tagService } from '@/services/api.js'
 import { timeAgo, formatDateTime } from '@/utils/dateFormat.js'
 import AiChatPanel from '@/components/panels/AiChatPanel.vue'
 import { ElMessage } from 'element-plus'
@@ -199,7 +207,25 @@ function onSearch() {
   searchLoading.value = true
   searchTimer = setTimeout(async () => {
     try {
-      searchResults.value = await articleService.search(keyword.value, selectedTags.value)
+      const scope = dirStore.viewScope
+      const deptCode = dirStore.currentDept || auth.user?.['部門代碼']
+      
+      const [articles, attachments] = await Promise.all([
+        articleService.search(keyword.value, selectedTags.value, scope, deptCode),
+        attachmentService.search(keyword.value, selectedTags.value, scope, deptCode)
+      ])
+      
+      // BUG-025: 記錄搜尋時使用的部門代碼，供 goToResult 切換部門使用
+      const searchDeptCode = scope === 'dept' ? deptCode : null
+      const allResults = [
+        ...articles.map(a => ({ ...a, itemType: 'article', searchDeptCode })),
+        ...attachments.map(a => ({ ...a, itemType: 'attachment', searchDeptCode }))
+      ]
+      
+      // 依更新時間排序
+      allResults.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+      
+      searchResults.value = allResults
     } catch (e) {
       searchResults.value = []
       ElMessage.error('搜尋失敗，請稍後再試')
@@ -207,6 +233,27 @@ function onSearch() {
       searchLoading.value = false
     }
   }, 300)
+}
+
+function clearSearch() {
+  clearTimeout(searchTimer)
+  keyword.value = ''
+  selectedTags.value = []
+  hasSearched.value = false
+  searchResults.value = []
+}
+
+// BUG-025: 若搜尋結果屬於不同部門，先切換目錄樹再導航
+// 確保文章頁的 getDirLabel 能正確解析 directoryIds（getTree 只含當前部門節點）
+async function goToResult(r) {
+  if (r.searchDeptCode && r.searchDeptCode !== dirStore.currentDept) {
+    await dirStore.fetchTree(dirStore.currentCompany, r.searchDeptCode)
+  }
+  if (r.itemType === 'attachment') {
+    router.push(`/attachment/${r.id}`)
+  } else {
+    router.push(`/article/${r.id}`)
+  }
 }
 
 function goArticle(n) {
@@ -420,6 +467,7 @@ onMounted(async () => {
   margin-bottom: 8px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

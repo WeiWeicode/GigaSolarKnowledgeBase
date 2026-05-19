@@ -1,6 +1,7 @@
 /**
  * Attachment Controller
  */
+const { Op } = require('sequelize');
 const {
   Attachment, AttachmentFile, Tag, AttachmentEditor,
   AttachmentVersionHistory, Directory, Article, UserExtraDepartment, sequelize
@@ -91,6 +92,61 @@ async function getAllAttachments(req, res) {
   } catch (error) {
     console.error('getAllAttachments error:', error.message);
     return res.status(500).json({ success: false, message: '取得附件列表失敗' });
+  }
+}
+
+// ── 全文搜尋 ──────────────────────────────────────────────────
+async function searchAttachments(req, res) {
+  try {
+    const { q, tags, scope, deptCode } = req.query;
+    const where = { is_published: true };
+    // 使用 Op.and 陣列累積條件，避免多個 Op.or 互相覆蓋
+    const andConditions = [];
+
+    if (q) {
+      andConditions.push({
+        [Op.or]: [
+          { title:       { [Op.like]: `%${q}%` } },
+          { description: { [Op.like]: `%${q}%` } },
+        ],
+      });
+    }
+
+    if (scope === 'public') {
+      where.is_public = true;
+    } else if (scope === 'dept') {
+      where.is_public = false;
+      // access_dept 為 NULL（職級/人員限制）或明確屬於此部門的私有內容均應納入
+      // 再由 canAccess() 做最終存取判斷，防止跨部門資料外洩
+      if (deptCode) {
+        andConditions.push({
+          [Op.or]: [
+            { access_dept: deptCode },
+            { access_dept: null },
+            { access_dept: '' },   // MSSQL: 空字串 '' ≠ NULL，前端表單未設部門時存入 ''，需明確匹配
+          ],
+        });
+      }
+    }
+
+    if (andConditions.length > 0) {
+      where[Op.and] = andConditions;
+    }
+
+    const include = [{ model: Tag, through: { attributes: [] }, as: 'Tags' }];
+    if (tags) {
+      const tagIds = tags.split(',').map(i => parseInt(i));
+      include[0].where = { id: { [Op.in]: tagIds } };
+    }
+
+    const attachments = await Attachment.findAll({ where, include });
+    const extraDeptCodes = await getUserExtraDeptCodes(req.user.員工工號);
+    const filtered = attachments.filter(a => canAccess(req.user, a, extraDeptCodes));
+
+    return res.json({ success: true, data: filtered });
+  } catch (error) {
+    console.error('searchAttachments error:', error.message);
+    return res.status(500).json({ success: false, message: '搜尋附件失敗' });
   }
 }
 
@@ -448,6 +504,7 @@ async function downloadFile(req, res) {
 
 module.exports = {
   getAllAttachments,
+  searchAttachments,
   getAttachmentById,
   uploadFiles,
   createAttachment,

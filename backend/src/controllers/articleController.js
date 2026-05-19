@@ -130,6 +130,18 @@ async function getArticleById(req, res) {
     });
     article.setDataValue('directoryIds', dirNodes.map(d => d.parent_id));
 
+    // BUG-025: 補上文章所屬部門代碼，供前端點進跨部門文章時自動切換目錄樹
+    // getTree API 只回傳當前部門的節點，跨部門瀏覽時 getDirLabel 無法解析 directoryIds → 顯示 raw ID
+    let deptCode = null;
+    if (dirNodes.length > 0) {
+      const parentDir = await Directory.findOne({
+        where: { id: dirNodes[0].parent_id },
+        attributes: ['dept_code'],
+      });
+      deptCode = parentDir?.dept_code || null;
+    }
+    article.setDataValue('deptCode', deptCode);
+
     // BUG-006: 補上關聯附件 id 陣列
     const linkedAttachments = await article.getAttachments({ attributes: ['id'] });
     article.setDataValue('attachmentIds', linkedAttachments.map(a => a.id));
@@ -144,19 +156,44 @@ async function getArticleById(req, res) {
 // ── 全文搜尋 ──────────────────────────────────────────────────
 async function searchArticles(req, res) {
   try {
-    const { q, tags } = req.query;
-    const where       = { is_published: true };
+    const { q, tags, scope, deptCode } = req.query;
+    const where = { is_published: true };
+    // 使用 Op.and 陣列累積條件，避免多個 Op.or 互相覆蓋
+    const andConditions = [];
 
     if (q) {
-      where[Op.or] = [
-        { title:   { [Op.like]: `%${q}%` } },
-        { content: { [Op.like]: `%${q}%` } },
-      ];
+      andConditions.push({
+        [Op.or]: [
+          { title:   { [Op.like]: `%${q}%` } },
+          { content: { [Op.like]: `%${q}%` } },
+        ],
+      });
+    }
+
+    if (scope === 'public') {
+      where.is_public = true;
+    } else if (scope === 'dept') {
+      where.is_public = false;
+      // access_dept 為 NULL（職級/人員限制）或明確屬於此部門的私有內容均應納入
+      // 再由 canAccess() 做最終存取判斷，防止跨部門資料外洩
+      if (deptCode) {
+        andConditions.push({
+          [Op.or]: [
+            { access_dept: deptCode },
+            { access_dept: null },
+            { access_dept: '' },   // MSSQL: 空字串 '' ≠ NULL，前端表單未設部門時存入 ''，需明確匹配
+          ],
+        });
+      }
+    }
+
+    if (andConditions.length > 0) {
+      where[Op.and] = andConditions;
     }
 
     const include = [{ model: Tag, through: { attributes: [] }, as: 'Tags' }];
     if (tags) {
-      const tagIds  = tags.split(',').map(i => parseInt(i));
+      const tagIds = tags.split(',').map(i => parseInt(i));
       include[0].where = { id: { [Op.in]: tagIds } };
     }
 

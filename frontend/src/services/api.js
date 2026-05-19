@@ -30,8 +30,11 @@ if (USE_MOCK) {
 const delay = (ms = 300) => new Promise(r => setTimeout(r, ms))
 
 // ── Axios 實例 ────────────────────────────────────────────────
+// 自動偵測主機：本地開發 (localhost) 或生產 (10.10.130.122)，後端固定 port 5155
+const _backendBase = `http://${window.location.hostname}:5155`
+
 const http = axios.create({
-  baseURL: 'http://localhost:5155/api/v1',
+  baseURL: `${_backendBase}/api/v1`,
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 })
@@ -471,12 +474,14 @@ export const articleService = {
     return normalizeArticle(res.data)  // Article
   },
 
-  async search(keyword, tags) {
+  async search(keyword, tags, scope, deptCode) {
     if (USE_MOCK) {
       await delay(350)
       let r = mockArticles.filter(a => a.isPublished)
       if (keyword) { const kw = keyword.toLowerCase(); r = r.filter(a => a.title.toLowerCase().includes(kw) || a.content.toLowerCase().includes(kw)) }
       if (tags?.length) r = r.filter(a => a.tags?.some(t => tags.includes(t.id)))
+      if (scope === 'public') r = r.filter(a => a.isPublic)
+      if (scope === 'dept') { r = r.filter(a => !a.isPublic); if (deptCode) r = r.filter(a => a.accessDept === deptCode) }
       return r
     }
 
@@ -485,6 +490,8 @@ export const articleService = {
       params: {
         q:    keyword  || undefined,
         tags: tags?.length ? tags.join(',') : undefined,
+        scope,
+        deptCode,
       },
     })
     return res.data.map(normalizeArticle)  // Article[]
@@ -560,6 +567,28 @@ export const attachmentService = {
     // GET /api/v1/attachments/:id
     const res = await http.get(`/attachments/${id}`)
     return normalizeAttachment(res.data)  // Attachment
+  },
+
+  async search(keyword, tags, scope, deptCode) {
+    if (USE_MOCK) {
+      await delay(350)
+      let r = mockAttachments.filter(a => a.isPublished)
+      if (keyword) { const kw = keyword.toLowerCase(); r = r.filter(a => a.title.toLowerCase().includes(kw) || (a.description && a.description.toLowerCase().includes(kw))) }
+      if (tags?.length) r = r.filter(a => a.tags?.some(t => tags.includes(t.id)))
+      if (scope === 'public') r = r.filter(a => a.isPublic)
+      if (scope === 'dept') { r = r.filter(a => !a.isPublic); if (deptCode) r = r.filter(a => a.accessDept === deptCode) }
+      return r
+    }
+
+    const res = await http.get('/attachments/search', {
+      params: {
+        q:    keyword  || undefined,
+        tags: tags?.length ? tags.join(',') : undefined,
+        scope,
+        deptCode,
+      },
+    })
+    return res.data.map(normalizeAttachment)
   },
 
   async uploadFiles(files) {

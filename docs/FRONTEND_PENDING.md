@@ -251,3 +251,54 @@
   4. 引入 `crossDeptService.getAllGrants()`，開啟面板時取得所有授權紀錄，只要該同仁有被授權進入當下所選部門，任何使用者都可以將其加入 `@提及` 選單中。
   5. 修正邏輯錯誤：移除了錯誤的 `myGrantedDepts` 比對，確保跨部門人員（如：資訊服務的同仁）在自己的原屬部門文件下，不會誤 tag 到授權者（如：人資主管）。
 - **驗證方式**：進入文章留言板，輸入 `@`，確認可搜尋並選擇部門代碼前三碼相同之轄下人員，以及被跨部門授權進入此部門之員工（不限主管帳號）；並確認在原部門時不會異常抓到授權者的帳號。
+
+---
+
+### [BUG-024] 搜尋知識庫範圍異常與無法搜尋附件
+- **狀態**：✅ 已修正（2026-05-19）
+- **根本原因**：
+  1. `HomeView.vue` 中的搜尋並未傳遞當前視圖 `scope` 與 `deptCode` 參數，導致部門狀態下搜尋會帶入所有已發佈的公開/其他部門文章。
+  2. 後端沒有附件搜尋的 API，且前端也沒有去呼叫，導致搜尋不到附件。
+- **修正檔案**：
+  - `backend/src/controllers/articleController.js`
+  - `backend/src/controllers/attachmentController.js`
+  - `backend/src/routes/attachments.js`
+  - `frontend/src/services/api.js`
+  - `frontend/src/views/HomeView.vue`
+- **修正內容**：
+  1. **後端**：在 `articleController.js` 增加 `scope` 與 `deptCode` 過濾（public 時 `is_public=true`；dept 時過濾 `access_dept` 與 `is_public=false`）。
+  2. **後端**：在 `attachmentController.js` 新增 `searchAttachments` 函式，並在路由 `/search` 提供 API。
+  3. **前端**：更新 `api.js`，讓 `articleService.search` 和 `attachmentService.search` 都接受 `scope` 與 `deptCode` 並傳送至後端；並加入對應的 Mock 邏輯。
+  4. **前端**：`HomeView.vue` 中 `onSearch` 時，同步呼叫文章與附件的 search，將結果合併後依 `updatedAt` 排序，並透過 `itemType` 屬性讓介面呈現標籤以區別文章與附件，且點擊後能導向正確路由。
+- **驗證方式**：在「公開文件」搜尋，確認出現公開的文章與附件；切換至「部門文件」搜尋，確認僅出現該部門的文章與附件。且結果列表顯示對應標籤（文章/附件），點擊後跳轉正確頁面。
+
+---
+
+### [BUG-026] 點擊搜尋卡片或通知，所屬目錄顯示 raw ID 且未切換部門
+- **狀態**：✅ 已修正（2026-05-19）
+- **根本原因**：
+  1. 後端 `getTree` API 只回傳 `dept_code = 當前部門` 的節點（及 `type='company'` 節點），不含其他部門的目錄。當跨部門用戶（S1800）點進 S1700 的文章時，`dirStore.tree` 沒有 S1700 的目錄節點，`getDirLabel(directoryId)` 找不到對應節點 → 回傳 raw ID（如 `dir-1779084072918-swe21`）。
+  2. 點擊搜尋結果卡片（`goToResult`）、首頁通知卡片（`goArticle`）、Header 通知彈窗（`router.push`）均直接導航，未事先切換到文章所屬部門，導致 Header 部門下拉選單與側邊欄保持在原部門，體驗不一致。
+- **修正檔案**：
+  - `backend/src/controllers/articleController.js`
+  - `frontend/src/components/layout/TheHeader.vue`
+  - `frontend/src/views/HomeView.vue`
+  - `frontend/src/views/ArticleView.vue`
+- **修正內容**：
+  1. **後端** `articleController.getArticleById`：在 `directoryIds` 查詢後，額外查詢 `Directory.findOne({ where: { id: dirNodes[0].parent_id } })` 取得 `dept_code`，以 `setDataValue('deptCode', deptCode)` 附加到回應，供前端知道文章所在部門。
+  2. **`TheHeader.vue`**：新增 `watch` 監聽 `dirStore.currentDept` 與 `dirStore.currentCompany`，當 ArticleView 程式切換部門後，同步更新 Header 公司/部門下拉選單的顯示值。
+  3. **`HomeView.vue` `onSearch`**：在合併搜尋結果時，將 `searchDeptCode`（搜尋時使用的 deptCode）標記到每筆結果。`goToResult` 改為 `async function`，若結果的 `searchDeptCode` 與 `dirStore.currentDept` 不同，先 `await dirStore.fetchTree(...)` 切換部門後再 `router.push`。
+  4. **`ArticleView.vue` `loadArticle`**：通過存取檢查後、`Object.assign(form, ...)` 前，若 `res.deptCode` 存在且與 `dirStore.currentDept` 不同，`await dirStore.fetchTree(dirStore.currentCompany, res.deptCode)` 切換部門。此邏輯涵蓋所有進入路徑（通知點擊、直連 URL、Header 通知彈窗），可確保 `getDirLabel` 解析到正確的目錄名稱。
+- **驗證方式**：
+  - 跨部門用戶（S1800 → S1700）點擊搜尋結果中的 S1700 文章，確認 Header 部門切換為 S1700，「所屬目錄」顯示目錄名稱而非 raw ID。
+  - 點擊 S1700 文章的通知，確認自動切換部門並正確顯示目錄名稱。
+  - 直接輸入 S1700 文章 URL，確認自動切換部門。
+
+---
+
+### [BUG-025] 搜尋知識庫缺少清空按鈕
+- **狀態**：✅ 已修正（2026-05-19）
+- **根本原因**：`HomeView.vue` 中原先未實作清空搜尋條件的功能與 UI 按鈕。
+- **修正檔案**：`frontend/src/views/HomeView.vue`
+- **修正內容**：在搜尋輸入框旁新增「清空」按鈕，並實作 `clearSearch` 函式，點擊後會清除關鍵字、選擇的標籤，並將搜尋結果與搜尋狀態恢復至預設。
+- **驗證方式**：在搜尋欄輸入關鍵字或選擇標籤後，點擊「清空」按鈕，確認輸入框、標籤與搜尋結果均被清除並恢復為預設狀態。

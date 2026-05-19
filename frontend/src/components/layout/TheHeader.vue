@@ -65,7 +65,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '@/store/auth.js'
 import { useNotificationStore } from '@/store/notification.js'
 import { useDirectoryStore } from '@/store/directory.js'
@@ -83,6 +83,14 @@ const selectedCompany = ref(auth.user?.組織OID || '')
 const selectedDept = ref(auth.user?.部門代碼 || '')
 
 const unreadCount = computed(() => notifStore.unread.length)
+
+// BUG-025: ArticleView 自動切換部門時，同步更新 Header 下拉選單的顯示值
+watch(() => dirStore.currentDept, (newDept) => {
+  if (newDept && newDept !== selectedDept.value) selectedDept.value = newDept
+})
+watch(() => dirStore.currentCompany, (newCompany) => {
+  if (newCompany && newCompany !== selectedCompany.value) selectedCompany.value = newCompany
+})
 
 const roleLabel = computed(() => ({
   ADMIN: '管理員', MANAGER: '主管', MEMBER: '同仁', GUEST: '訪客'

@@ -1,0 +1,36 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gigaks-backend
+    ports:
+      - "5155:5155"
+    env_file:
+      - ./backend/.env          # 敏感設定（DB 密碼等）從外部注入，不 bake 進 image
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - ./backend/uploads:/app/uploads   # 上傳檔案持久化
+    restart: unless-stopped
+    networks:
+      - gigaks-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: gigaks-frontend
+    ports:
+      - "5153:5153"
+    volumes:
+      - ./frontend/dist:/usr/share/nginx/html   # 直接覆蓋 dist 即生效，不需重啟
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - gigaks-net
+
+networks:
+  gigaks-net:
+    driver: bridge

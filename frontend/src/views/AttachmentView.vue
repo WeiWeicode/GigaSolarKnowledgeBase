@@ -369,7 +369,7 @@ const myGrantedDepts = ref([])  // 跨部門授權的部門代碼清單
 // ✅ 職級選項（與 ArticleView 一致）
 const GRADE_OPTIONS = [
   { label: '一般人員（全員可見）', value: 10 },
-  { label: '課級以上', value: 8 },
+  { label: '課級以上', value: 7 },
   { label: '理級以上', value: 6 },
   { label: '處級以上', value: 4 },
 ]

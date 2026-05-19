@@ -271,3 +271,4 @@ node src/scripts/seedDirectories.js
 - 修改後需要更新`FRONTEND_PENDING.md` / `BACKEND_PENDING.md`。
 - 新增與修改需求，需要更新`INCREASEDEMAND.md`。
 - 不要隨意修改功能與架構。
+- 不能使用git指令進行版本控管。

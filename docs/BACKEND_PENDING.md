@@ -25,6 +25,8 @@
 | B-07 | 版本號重複：第一次編輯儲存後 version 仍為 v1 | 2026-05-18 | `backend/src/controllers/articleController.js` |
 | B-08 | BUG-018：跨部門指定人員無法存取文章；新增前三碼匹配及跨部門授權補強 | 2026-05-18 | `accessHelper.js`、`articleController.js`、`attachmentController.js`、`UserExtraDepartment` model、`crossDepartments` route |
 | B-09 | BUG-021：跨部門上傳附件後，目錄捷徑出現在操作者本部門而非目標部門 | 2026-05-18 | `attachmentController.js` `createAttachment`、`updateAttachment` |
+| B-10 | BUG-024：搜尋知識庫範圍過濾（scope/deptCode）與支援附件搜尋 | 2026-05-19 | `articleController.js`、`attachmentController.js`、`routes/attachments.js` |
+| B-11 | BUG-026：`getArticleById` 補回 `deptCode`，供前端跨部門導航自動切換目錄樹 | 2026-05-19 | `articleController.js` |
 
 ---
 
@@ -154,3 +156,99 @@ dept_code: deptCodeMap[dirId] || null,   // 正確：目標目錄的部門
 - `backend/src/routes/crossDepartments.js`：新增，`GET /my-grants` 要求 `authMiddleware`（全角色），其餘端點要求 `requireRole('MANAGER')`。
 
 **驗證方式：** 跨部門帳號被加入文章指定人員後，`GET /api/v1/articles/:id` 回傳 200；前三碼部門匹配的帳號也應可讀取；`GET /api/v1/cross-departments/my-grants` 回傳用戶的跨部門授權清單。
+
+---
+
+### B-10｜BUG-024 搜尋知識庫範圍過濾與支援附件搜尋
+
+**問題描述：**
+
+1. 知識庫搜尋目前無法過濾特定的「部門」及「公開」範圍，無論使用者切換到哪一個部門，搜尋都會帶出所有部門的文章。
+2. 搜尋功能只支援文章，不支援附件檔案。呼叫 `GET /api/v1/attachments/search` 回傳 500 錯誤。
+
+**根本原因（實際發現）：**
+
+1. **`attachmentController.js` 缺少 `Op` 引入**：`searchAttachments` 函式內使用 `Op.or`、`Op.like`、`Op.in`，但檔案頂部未 `require('sequelize')` 取得 `Op`，導致執行時拋 `ReferenceError: Op is not defined` → 500。
+2. **`articleController.js` 解構遺漏**：`searchArticles` 解構 `req.query` 時只取 `{ q, tags }`，未取 `scope` 與 `deptCode`，導致兩個變數永遠為 `undefined`，範圍過濾邏輯完全被跳過，文章搜尋無論如何都回傳全部已發佈文章。
+
+**修正內容（第一輪 2026-05-19）：**
+
+- `backend/src/controllers/attachmentController.js`：頂部新增 `const { Op } = require('sequelize');`，修正 ReferenceError → 500。
+- `backend/src/controllers/articleController.js`：`searchArticles` 解構改為 `const { q, tags, scope, deptCode } = req.query;`，使範圍過濾邏輯正確生效。
+
+**修正內容（第二輪 2026-05-19）：**
+
+發現附件搜尋仍無法回傳 `access_dept = NULL` 的私有附件（例如僅設「一般人員可見」職級門檻而未設部門限制的附件），且關鍵字搜尋（`q`）與部門過濾（`scope=dept`）同時存在時，`where[Op.or]` 會互相覆蓋導致條件失效。
+
+- `backend/src/controllers/attachmentController.js`、`backend/src/controllers/articleController.js`：
+  - 改用 `andConditions` 陣列以 `Op.and` 累積條件，避免 `Op.or` 覆蓋問題。
+  - `scope=dept` 時部門條件改為 `access_dept = deptCode OR access_dept IS NULL`，使職級/人員限制類型的私有內容也能被搜尋到。
+  - 最終存取管控仍由 `canAccess()` 確保，防止跨部門資料外洩。
+
+**修正內容（第三輪 2026-05-19）：**
+
+跨部門用戶（如 S1800 用戶跨部門至 S1700）在部門搜尋時仍回傳空陣列。根本原因：`canAccess` 的職級判斷區塊要求 `user.級職 <= levelLimit`，但 BPM 用戶的 `user.級職` 可能為 null，導致 null 判斷失敗直接 return false。這與前端 ArticleView「access_level=10 代表全員可見，跳過檢查」的邏輯不一致。
+
+- `backend/src/helpers/accessHelper.js`：`canAccess` 第 5 步職級判斷中，新增 `if (Number(levelLimit) >= 10) return true;`，讓「一般人員（全員可見）」內容對所有用戶直接放行，不再依賴 `user.級職` 的值。
+
+**修正內容（第四輪 2026-05-19）：**
+
+跨部門用戶在部門搜尋仍回傳空陣列。根本原因：前端 `ArticleView.vue` 的 `hasAccess` 表單初始值 `部門: ''`，而 `buildPayload()` 直接使用 `accessDept: form.hasAccess.部門`，導致所有文章與附件的 `access_dept` 欄位在 MSSQL 中儲存為空字串 `''`，而非 `NULL`。MSSQL 中 `'' IS NULL` 為 false，因此原本的 `OR access_dept IS NULL` 無法匹配這些紀錄，造成部門搜尋時幾乎所有私有內容都被 SQL 層過濾掉。
+
+- `backend/src/controllers/attachmentController.js`、`backend/src/controllers/articleController.js`：
+  - `scope=dept` 部門條件的 `Op.or` 中新增 `{ access_dept: '' }`，使「前端未設部門而存入空字串」的資料也能被搜到。
+  - 最終存取管控仍由 `canAccess()` 確保。
+
+```js
+andConditions.push({
+  [Op.or]: [
+    { access_dept: deptCode },
+    { access_dept: null },
+    { access_dept: '' },   // MSSQL: 空字串 '' ≠ NULL，前端表單未設部門時存入 ''，需明確匹配
+  ],
+});
+```
+
+**驗證方式：**
+- `GET /api/v1/attachments/search?q=標籤&scope=dept&deptCode=S1800` 應回傳 200 而非 500。
+- 點擊標籤搜尋，確認結果同時出現文章與附件（含僅設職級門檻、access_dept 為 NULL 的附件）。
+- 跨部門用戶（S1800 跨部門至 S1700）點擊標籤搜尋，確認 S1700 的「一般人員可見」文章與附件出現在結果中。
+- `GET /api/v1/attachments/search?tags=10&scope=dept&deptCode=S1700` 應回傳非空陣列而非 `[]`。
+- 傳入不同的 `scope` 與 `deptCode`，確認跨部門資料不會互相外洩。
+
+---
+
+### B-11｜BUG-026 getArticleById 補回 deptCode
+
+**問題描述：**
+
+跨部門用戶點進其他部門的文章時，文章詳情頁的「所屬目錄」欄位顯示 raw ID（如 `dir-1779084072918-swe21`）而非目錄名稱，且 Header 部門下拉選單未切換至文章所屬部門。
+
+**根本原因：**
+
+後端 `getTree` API 只回傳指定部門的目錄節點，`dirStore.tree` 不含其他部門的節點。`getDirLabel(id)` 在 `dirStore.tree` 中找不到跨部門文章的 `directoryId` → 回傳 raw ID。
+
+前端缺乏知道「文章屬於哪個部門」的機制，無法在導航時事先切換目錄樹。
+
+**修正內容（2026-05-19）：**
+
+`backend/src/controllers/articleController.js` - `getArticleById`：
+
+在取得 `directoryIds` 後，額外查詢第一個父目錄的 `dept_code`，以 `setDataValue('deptCode', deptCode)` 附加至回應。`normalizeArticle` 的 `...a` spread 會自動透傳此欄位。
+
+```js
+// 補上文章所屬部門代碼，供前端點進跨部門文章時自動切換目錄樹
+let deptCode = null;
+if (dirNodes.length > 0) {
+  const parentDir = await Directory.findOne({
+    where: { id: dirNodes[0].parent_id },
+    attributes: ['dept_code'],
+  });
+  deptCode = parentDir?.dept_code || null;
+}
+article.setDataValue('deptCode', deptCode);
+```
+
+**驗證方式：**
+- `GET /api/v1/articles/:id` 回傳中應包含 `deptCode` 欄位。
+- 搭配前端 BUG-026 修正：跨部門點進文章後，Header 應切換至文章所屬部門，「所屬目錄」應顯示目錄名稱而非 raw ID。

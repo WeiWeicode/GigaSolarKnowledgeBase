@@ -56,8 +56,11 @@ function canAccess(user, resource, extraDeptCodes = []) {
   }
 
   // 5. 職級限制：職級小於等於指定等級的人員（數字越小職等越高）
+  //    access_level = 10 代表「一般人員（全員可見）」，無需職級限制，直接允許
+  //    與前端 ArticleView「access_level=10 跳過檢查」邏輯保持一致
   const levelLimit = resource.access_level ?? resource.accessLevel;
   if (levelLimit !== null && levelLimit !== undefined) {
+    if (Number(levelLimit) >= 10) return true;
     if (user.級職 !== null && user.級職 !== undefined && user.級職 <= levelLimit) {
       return true;
     }

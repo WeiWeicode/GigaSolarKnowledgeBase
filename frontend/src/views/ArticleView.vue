@@ -355,7 +355,7 @@ const myGrantedDepts = ref([])  // 跨部門授權的部門代碼清單
 // ✅ 職級選項
 const GRADE_OPTIONS = [
   { label: '一般人員（全員可見）', value: 10 },
-  { label: '課級以上', value: 8 },
+  { label: '課級以上', value: 7 },
   { label: '理級以上', value: 6 },
   { label: '處級以上', value: 4 },
 ]
@@ -606,6 +606,13 @@ async function loadArticle() {
         }
       }
     }
+    // BUG-025: 若文章所屬部門與目前瀏覽部門不同（從通知/搜尋/直連 URL 進入），
+    // 自動切換目錄樹，確保「所屬目錄」欄位能顯示名稱而非 raw ID
+    // getTree 只含當前部門節點，跨部門時 getDirLabel 找不到對應節點
+    if (res.deptCode && res.deptCode !== dirStore.currentDept) {
+      await dirStore.fetchTree(dirStore.currentCompany, res.deptCode)
+    }
+
     Object.assign(form, {
       title:        res.title || '',
       content:      res.content || '',
