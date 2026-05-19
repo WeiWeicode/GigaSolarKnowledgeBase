@@ -231,3 +231,23 @@
   - **移除 `accessDenied`**：移除 ref 與 Banner 樣板，`v-else-if="!accessDenied"` 改為 `v-else`。
   - **`isArticleAccessible` 重寫**：同步更新為指定人員優先 → 前三碼+跨部門 → AND 職級的一致邏輯。
 - **驗證方式**：切換至沒權限的帳號，直接輸入附件 URL，確認自動跳回首頁並顯示警告；跨部門授權用戶可正常繁存取附件；左側目錄樹附件圖示顯示正確。
+
+---
+
+### [BUG-023] 留言 @提及清單未包含同部門前三碼人員及跨部門人員
+- **狀態**：✅ 已修正（2026-05-19）
+- **根本原因**：
+  1. `CommentPanel.vue` 中 `onInput` 取得 `@mention` 選項清單時，原本僅使用嚴格比對 `c.部門代碼 === dirStore.currentDept`。
+  2. 原本依賴 `/created` API，導致非主管同仁無法取得跨部門授權清單。
+- **修正檔案**：
+  - `backend/src/controllers/crossDepartmentController.js`
+  - `backend/src/routes/crossDepartments.js`
+  - `frontend/src/services/api.js`
+  - `frontend/src/components/panels/CommentPanel.vue`
+- **修正內容**：
+  1. 後端新增 `GET /api/v1/cross-departments/all` 路由與 `getAll` Controller 方法，讓任何同仁都能取得所有的跨部門授權資料（用於 @提及比對）。
+  2. 前端 `api.js` 實作 `getAllGrants()`。
+  3. `CommentPanel.vue` 中過濾條件改為 `c.部門代碼.startsWith(dirStore.currentDept.substring(0, 3))`，讓轄下單位可以互 tag。
+  4. 引入 `crossDeptService.getAllGrants()`，開啟面板時取得所有授權紀錄，只要該同仁有被授權進入當下所選部門，任何使用者都可以將其加入 `@提及` 選單中。
+  5. 修正邏輯錯誤：移除了錯誤的 `myGrantedDepts` 比對，確保跨部門人員（如：資訊服務的同仁）在自己的原屬部門文件下，不會誤 tag 到授權者（如：人資主管）。
+- **驗證方式**：進入文章留言板，輸入 `@`，確認可搜尋並選擇部門代碼前三碼相同之轄下人員，以及被跨部門授權進入此部門之員工（不限主管帳號）；並確認在原部門時不會異常抓到授權者的帳號。

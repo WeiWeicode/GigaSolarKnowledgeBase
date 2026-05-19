@@ -91,7 +91,7 @@
 import { ref, watch, nextTick } from 'vue'
 import { useAuthStore } from '@/store/auth.js'
 import { useNotificationStore } from '@/store/notification.js'
-import { commentService, colleagueService } from '@/services/api.js'
+import { commentService, colleagueService, crossDeptService } from '@/services/api.js'
 import { useDirectoryStore } from '@/store/directory.js'
 import { timeAgo } from '@/utils/dateFormat.js'
 import { ElMessage } from 'element-plus'
@@ -118,6 +118,7 @@ const allColleagues = ref([])
 const mentionList = ref([])
 let mentionStartIndex = -1
 const mentionedAccounts = ref([])  // 追蹤本次留言已 @ 的工號
+const allCrossGrants = ref([])
 
 // Helper：這則留言有沒有 @tag 到我
 // 用 String() 比較，避免 MSSQL int 與前端 string 型別不一致導致誤判
@@ -201,9 +202,18 @@ function onInput() {
   mentionStartIndex = atIdx
   const lowerQuery = query.toLowerCase()
   const pool = dirStore.currentDept
-    ? allColleagues.value.filter(c => c.部門代碼 === dirStore.currentDept)
-    : allColleagues.value
+    ? allColleagues.value.filter(c => {
+        if (!c.部門代碼) return false
+        if (c.部門代碼.startsWith(dirStore.currentDept.substring(0, 3))) return true
+        
+        // 只要該同仁有被跨部門授權進入當下所選部門，即可被 tag（不限主管身份）
+        const isCrossDeptEmp = allCrossGrants.value.some(g => g.dept_code === dirStore.currentDept && g.account === String(c.員工工號))
+        
+        if (isCrossDeptEmp) return true
 
+        return false
+      })
+    : allColleagues.value
   mentionList.value = pool
     .filter(c => c.員工姓名.toLowerCase().includes(lowerQuery) || c.部門名稱.includes(query))
     .slice(0, 8)
@@ -251,7 +261,12 @@ async function submitComment() {
 
 watch(() => props.modelValue, async (v) => {
   if (v) {
-    allColleagues.value = await colleagueService.getAll()
+    const [colleagues, allGrants] = await Promise.all([
+      colleagueService.getAll(),
+      crossDeptService.getAllGrants().catch(() => [])
+    ])
+    allColleagues.value = colleagues
+    allCrossGrants.value = allGrants
     await loadComments()
   } else {
     mentionList.value = []

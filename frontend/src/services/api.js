@@ -740,6 +740,12 @@ export const crossDeptService = {
     return res.data   // [{ id, account, org_oid, dept_code, dept_name, created_by, created_at }]
   },
 
+  /** 取得所有跨部門授權清單（用於 @提及過濾） */
+  async getAllGrants() {
+    const res = await http.get('/cross-departments/all')
+    return res.data
+  },
+
   /** 取得當前 MANAGER 自己建立的授權紀錄（僅 MANAGER） */
   async getCreated() {
     const res = await http.get('/cross-departments/created')

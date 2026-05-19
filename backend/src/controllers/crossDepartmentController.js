@@ -20,6 +20,20 @@ async function getMyGrants(req, res) {
 }
 
 /**
+ * GET /api/v1/cross-departments/all
+ * 取得所有跨部門授權紀錄（用於 CommentPanel 留言板 @提及比對）
+ */
+async function getAll(req, res) {
+  try {
+    const records = await UserExtraDepartment.findAll();
+    return res.json({ success: true, data: records });
+  } catch (error) {
+    console.error('crossDepartmentController.getAll error:', error.message);
+    return res.status(500).json({ success: false, message: '伺服器內部錯誤' });
+  }
+}
+
+/**
  * GET /api/v1/cross-departments/created
  * 取得當前 MANAGER 自己建立的授權紀錄（用於 SettingsView 列表顯示）
  */
@@ -100,4 +114,4 @@ async function remove(req, res) {
   }
 }
 
-module.exports = { getMyGrants, getCreated, create, remove };
+module.exports = { getMyGrants, getAll, getCreated, create, remove };
