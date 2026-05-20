@@ -370,6 +370,18 @@ export const directoryService = {
     return res.data  // DirectoryNode[]
   },
 
+  async getPublicTree(組織OID) {
+    if (USE_MOCK) {
+      await delay(300)
+      return JSON.parse(JSON.stringify(mockDirectoryTree))
+    }
+
+    // GET /api/v1/directories?組織OID=xxx&scope=public
+    // 不帶 部門代碼，後端回傳跨部門的所有公開已發佈節點
+    const res = await http.get('/directories', { params: { 組織OID, scope: 'public' } })
+    return res.data  // DirectoryNode[]
+  },
+
   async createNode(parentId, label, deptCode) {
     if (USE_MOCK) {
       await delay(300)

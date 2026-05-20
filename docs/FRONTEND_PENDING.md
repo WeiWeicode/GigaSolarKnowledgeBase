@@ -338,6 +338,32 @@
 
 ---
 
+### [BUG-027] 公開文件模式只顯示當前部門的公開文章
+- **狀態**：✅ 已修正（2026-05-20）
+- **根本原因**：
+  1. 後端 `getTree` 查詢條件為 `WHERE type='company' OR dept_code=部門代碼`，永遠只取當前部門節點。
+  2. 前端 store `fetchTree` 每次都傳入 `currentDept`，使 `tree.value` 只含當前部門資料。
+  3. `filterPublic` 只能在已抓到的部門資料中篩選，其他部門的公開文章永遠不會出現。
+- **修正檔案**：
+  - `backend/src/controllers/directoryController.js`：`getTree` 支援 `scope=public` 參數；`scope=public` 時不限部門全量抓取，僅保留 `is_published && is_public` 的文章 / 附件，排除 `trash` 節點。
+  - `frontend/src/services/api.js`：`directoryService` 新增 `getPublicTree(組織OID)`，呼叫 `GET /directories?scope=public`。
+  - `frontend/src/store/directory.js`：新增 `publicTree` ref 與 `fetchPublicTree(組織OID)` action；`filteredTree` computed 在 `viewScope==='public'` 時改用 `publicTree`（後端已過濾，前端 `filterPublic` 再修剪空容器）。
+  - `frontend/src/components/layout/TheSidebar.vue`：`onScopeChange` 切換至 `public` 時呼叫 `dirStore.fetchPublicTree(oid)`，確保立即抓取跨部門公開樹。
+- **驗證方式**：
+  - 切換到「公開文件」，確認目錄樹顯示所有部門的公開文章（而非僅當前部門）。
+  - 確認垃圾桶節點與未發佈文章不會出現在公開目錄樹中。
+  - 切回「部門文件」，確認目錄樹仍只顯示當前部門內容。
+
+---
+
+### [FEAT-003] 跨部門管理目標部門限制前三碼
+- **狀態**：✅ 已完成（2026-05-20）
+- **修改檔案**：`frontend/src/views/SettingsView.vue`
+- **修改內容**：`filteredGrantDepts` computed 新增以主管自身 `部門代碼` 前三碼（`user.value?.部門代碼.slice(0,3)`）過濾部門清單的邏輯。主管只能選取部門代碼前三碼相同的部門（例如 S1800 主管只能選 S1800、S1810、S1820）。過濾在已有的搜尋文字篩選之前執行，互不影響。
+- **驗證方式**：以 MANAGER 帳號登入，至「設定 → 跨部門管理」，選擇目標公司後，確認目標部門下拉只顯示與自身部門代碼前三碼相同的部門，其餘部門不出現。
+
+---
+
 ### [FEAT-002] 優化 AI 面板「新對話」按鈕位置與輸入框高度對齊
 - **狀態**：✅ 已完成（2026-05-20）
 - **根本原因**：

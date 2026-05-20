@@ -70,7 +70,12 @@ const computedNavItems = computed(() => {
   return navItems
 })
 
-function onScopeChange() {
+async function onScopeChange(newScope) {
+  if (newScope === 'public') {
+    // 切到公開文件時，重新抓取跨部門公開樹
+    const oid = auth.user?.組織OID || dirStore.currentCompany
+    if (oid) dirStore.fetchPublicTree(oid)
+  }
   router.push('/home')
 }
 </script>

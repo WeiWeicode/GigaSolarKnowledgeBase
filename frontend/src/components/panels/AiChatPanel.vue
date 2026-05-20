@@ -206,11 +206,12 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { marked } from 'marked'
-import { aiService, articleService } from '@/services/api.js'
+import { aiService, articleService, crossDeptService } from '@/services/api.js'
 import { useDirectoryStore } from '@/store/directory.js'
+import { useAuthStore } from '@/store/auth.js'
 
 const props = defineProps({
   modelValue:     Boolean,
@@ -228,7 +229,17 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue', 'apply', 'tagAdded'])
 
-const dirStore = useDirectoryStore()
+const dirStore  = useDirectoryStore()
+const authStore = useAuthStore()
+
+// 跨部門授權（同 DirectoryTree.vue，用於 # 篩選）
+const myGrantedDepts = ref([])
+onMounted(async () => {
+  try {
+    const grants = await crossDeptService.getMyGrants()
+    myGrantedDepts.value = grants.map(g => g.dept_code)
+  } catch { /* 無授權資料，忽略 */ }
+})
 
 const QUICK_COMMANDS = [
   { key: 'quick_summary',    label: '簡易摘要' },
@@ -352,13 +363,87 @@ function onInputBlur() {
   setTimeout(() => { showMentionDropdown.value = false }, 200)
 }
 
+/**
+ * 判斷目錄樹節點是否有存取權限（邏輯與 DirectoryTree.vue checkItemAccess 一致）
+ */
+function hasTreeAccess(nodeData) {
+  const user = authStore.user
+  if (!user || authStore.isAdmin) return true
+
+  const resource = nodeData.Article
+  if (!resource) return true
+
+  const isPublic = resource.is_public === true || resource.is_public === 1
+
+  // 公開瀏覽模式：非公開文件不可見
+  if (dirStore.viewScope === 'public' && !isPublic) return false
+  if (isPublic) return true
+
+  // 解析 access_members
+  let accessMembers = resource.access_members
+  if (typeof accessMembers === 'string') {
+    try { accessMembers = JSON.parse(accessMembers) } catch { accessMembers = [] }
+  }
+  const members = Array.isArray(accessMembers) ? accessMembers : []
+
+  // 職級門檻
+  const accessLevel = resource.access_level ?? 10
+  const passLevel   = accessLevel >= 10 || (user.級職 ?? 99) <= accessLevel
+
+  let primaryAccess = false
+  if (members.length > 0) {
+    primaryAccess = members.map(String).includes(String(user.員工工號))
+  } else {
+    const rDept = resource.access_dept || ''
+    const uDept = user.部門代碼 || ''
+    if (!rDept) {
+      primaryAccess = true
+    } else {
+      const exactMatch  = uDept === rDept
+      const prefixMatch = uDept.length >= 3 && rDept.length >= 3
+                       && uDept.substring(0, 3) === rDept.substring(0, 3)
+      const crossMatch  = myGrantedDepts.value.includes(rDept)
+      primaryAccess = exactMatch || prefixMatch || crossMatch
+    }
+  }
+  return primaryAccess && passLevel
+}
+
+/**
+ * 從 filteredTree 遍歷取出可見的文章清單
+ * - 排除 trash 節點及其子孫（下架文章）
+ * - 排除無存取權限的文章（禁止眼睛）
+ */
+function collectVisibleArticles(nodes, inTrash = false) {
+  const result = []
+  for (const node of nodes) {
+    if (node.type === 'trash') continue        // 完全跳過垃圾桶節點
+    if (inTrash) continue                       // 不處理 trash 後代
+    if (node.type === 'article') {
+      if (hasTreeAccess(node)) {
+        result.push({ id: node.article_id, title: node.label })
+      }
+    }
+    if (node.children?.length) {
+      result.push(...collectVisibleArticles(node.children, false))
+    }
+  }
+  return result
+}
+
 async function fetchMentionArticles(q) {
   try {
-    const scope    = dirStore.viewScope || 'dept'
-    const deptCode = dirStore.currentDept
-    const results  = await articleService.search(q || '', [], scope, deptCode)
-    mentionResults.value      = results.slice(0, 8)
-    showMentionDropdown.value = mentionResults.value.length > 0 || q === ''
+    // 直接從已載入的目錄樹篩選，無需打 API
+    const allVisible = collectVisibleArticles(dirStore.filteredTree)
+
+    // 依關鍵字過濾（空字串 = 顯示全部）
+    const keyword = (q || '').trim().toLowerCase()
+    const filtered = keyword
+      ? allVisible.filter(a => a.title.toLowerCase().includes(keyword))
+      : allVisible
+
+    mentionResults.value      = filtered.slice(0, 8)
+    showMentionDropdown.value = mentionResults.value.length > 0 || keyword === ''
   } catch {
     showMentionDropdown.value = false
   }

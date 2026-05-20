@@ -8,39 +8,63 @@ const { Op } = require('sequelize');
 
 /**
  * 取得目錄樹
- * GET /api/v1/directories?組織OID=xxx&部門代碼=xxx
+ * GET /api/v1/directories?組織OID=xxx&部門代碼=xxx[&scope=public]
+ *
+ * scope=public：不限部門，僅回傳已發佈且公開的文章 / 附件及其容器節點（排除垃圾桶）
  */
 async function getTree(req, res) {
   try {
-    const { 組織OID, 部門代碼 } = req.query;
-    
-    // 查詢該部門下的所有節點
-    // 包含 Article 與 Attachment 的權限欄位以便過濾
+    const { 組織OID, 部門代碼, scope } = req.query;
+
+    const includeAssoc = [
+      {
+        model: Article,
+        attributes: ['is_published', 'is_public', 'access_dept', 'access_members', 'access_level'],
+      },
+      {
+        model: Attachment,
+        attributes: ['is_published', 'is_public', 'access_dept', 'access_members', 'access_level'],
+      },
+    ];
+
+    // ── 公開模式：不限部門，全量抓取後僅留公開已發佈資料 ──────
+    if (scope === 'public') {
+      const allRows = await Directory.findAll({
+        include: includeAssoc,
+        order: [['sort_order', 'ASC']],
+      });
+
+      // 排除垃圾桶；文章 / 附件只保留已發佈且 is_public=true 的
+      const publicRows = allRows.filter(row => {
+        if (row.type === 'trash') return false;
+        if (row.type === 'article') {
+          return row.Article && row.Article.is_published && row.Article.is_public;
+        }
+        if (row.type === 'attachment') {
+          return row.Attachment && row.Attachment.is_published && row.Attachment.is_public;
+        }
+        return true; // company / department / directory：保留結構，前端 filterPublic 再修剪空容器
+      });
+
+      const tree = buildTree(publicRows);
+      return res.json({ success: true, data: tree });
+    }
+
+    // ── 部門模式（預設）：只取當前部門及公司節點 ───────────────
     const rows = await Directory.findAll({
       where: {
         [Op.or]: [
-          { type: 'company' }, // 公司節點（全域）
-          { dept_code: 部門代碼 }, // 指定部門
-        ]
+          { type: 'company' },      // 公司節點（全域）
+          { dept_code: 部門代碼 },  // 指定部門
+        ],
       },
-      include: [
-        { 
-          model: Article, 
-          attributes: ['is_published', 'is_public', 'access_dept', 'access_members', 'access_level'] 
-        },
-        { 
-          model: Attachment, 
-          attributes: ['is_published', 'is_public', 'access_dept', 'access_members', 'access_level'] 
-        }
-      ],
-      order: [['sort_order', 'ASC']]
+      include: includeAssoc,
+      order: [['sort_order', 'ASC']],
     });
 
     // 過濾規則：
     // - 文章 / 附件：已發佈才顯示（ADMIN / MANAGER 可看未發佈）
     //   存取權限交給前端 checkItemAccess 處理（沒有權限顯示禁止眼睛 icon，不直接隱藏）
-    //   不在此呼叫 canAccess，避免 getTree 沒有傳入 extraDeptCodes 導致跨部門用戶
-    //   看不到自己有授權的項目，且符合「就算沒權限也要出現」的 UI 設計
     // - 其他節點（directory、department 等）：一律顯示
     const isManager = req.user.role === 'ADMIN' || req.user.role === 'MANAGER';
     const filteredRows = rows.filter(row => {
@@ -49,13 +73,11 @@ async function getTree(req, res) {
         if (!row.Article.is_published && !isManager) return false;
         return true;
       }
-
       if (row.type === 'attachment') {
         if (!row.Attachment) return false;
         if (!row.Attachment.is_published && !isManager) return false;
         return true;
       }
-
       return true; // 目錄節點預設顯示
     });
 

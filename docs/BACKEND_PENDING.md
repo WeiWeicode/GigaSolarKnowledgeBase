@@ -30,6 +30,15 @@
 
 ---
 
+### [B-09] 附件版本歷史紀錄 version_number 語意錯誤
+- **狀態**：✅ 已修正（2026-05-20）
+- **根本原因**：`updateAttachment` 建立 `AttachmentVersionHistory` 記錄時，`version_number` 存入的是 `currentVersion`（修改前的舊版次，例如 1），但使用者預期看到的是本次儲存建立的新版次（`nextVersion`，例如 2）。由於附件歷史不像文章歷史儲存內容快照，其語意為「誰在何時建立了哪個版次」，因此應記錄 `nextVersion`。
+- **修正檔案**：`backend/src/controllers/attachmentController.js`
+- **修正內容**：`updateAttachment` 的 `AttachmentVersionHistory.create` 將 `version_number: currentVersion` 改為 `version_number: nextVersion`。
+- **驗證方式**：編輯附件後儲存，開啟「修改紀錄」面板，確認面板內出現與 action bar 版次相符的版本條目（例如 action bar 顯示 v2，面板也顯示 v2）；再儲存一次，確認面板出現 v3、v2 兩筆紀錄。
+
+---
+
 ### [B-07] AI SSE 串流空白：`think` 參數位置錯誤 & Nginx 緩衝
 - **狀態**：✅ 已修正（2026-05-20）
 - **根本原因**：
@@ -47,6 +56,7 @@
 | B-04 | getAllAttachments 不含 Files | 2026-05-14 | `attachmentController.getAllAttachments` 加入 Files include（limit 1） |
 | B-05 | Tag 缺少 DELETE 端點 | 2026-05-14 | `tagController.deleteTag`、`routes/tags.js`、前端 `api.js tagService.remove`、`AdminView.vue deleteTag` |
 | B-07 | 版本號重複：第一次編輯儲存後 version 仍為 v1 | 2026-05-18 | `backend/src/controllers/articleController.js` |
+| B-09 | 附件版本歷史紀錄 version_number 語意錯誤 | 2026-05-20 | `backend/src/controllers/attachmentController.js` |
 | B-08 | BUG-018：跨部門指定人員無法存取文章；新增前三碼匹配及跨部門授權補強 | 2026-05-18 | `accessHelper.js`、`articleController.js`、`attachmentController.js`、`UserExtraDepartment` model、`crossDepartments` route |
 | B-09 | BUG-021：跨部門上傳附件後，目錄捷徑出現在操作者本部門而非目標部門 | 2026-05-18 | `attachmentController.js` `createAttachment`、`updateAttachment` |
 | B-10 | BUG-024：搜尋知識庫範圍過濾（scope/deptCode）與支援附件搜尋 | 2026-05-19 | `articleController.js`、`attachmentController.js`、`routes/attachments.js` |

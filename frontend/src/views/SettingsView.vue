@@ -352,11 +352,18 @@ const companies       = ref([])
 const grantDepts      = ref([])
 const deptFilterQuery = ref('')
 
-// 支援中文名稱與部門代號同時搜尋
+// 限制主管只能選取與自身部門代碼前三碼相同的部門，再支援中文名稱與部門代號搜尋
 const filteredGrantDepts = computed(() => {
+  const managerDeptPrefix = (user.value?.部門代碼 || '').slice(0, 3)
+  let depts = grantDepts.value
+
+  if (managerDeptPrefix) {
+    depts = depts.filter(d => d.部門代碼?.startsWith(managerDeptPrefix))
+  }
+
   const q = deptFilterQuery.value.trim().toLowerCase()
-  if (!q) return grantDepts.value
-  return grantDepts.value.filter(d =>
+  if (!q) return depts
+  return depts.filter(d =>
     d.部門名稱?.toLowerCase().includes(q) ||
     d.部門代碼?.toLowerCase().includes(q)
   )

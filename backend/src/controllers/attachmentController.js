@@ -339,7 +339,7 @@ async function updateAttachment(req, res) {
 
     await AttachmentVersionHistory.create({
       attachment_id:  attachment.id,
-      version_number: currentVersion,
+      version_number: nextVersion,
       diff_summary:   changeNote || '更新內容',
       editor_id:      req.user.員工工號,
       editor_name:    req.user.員工姓名,
