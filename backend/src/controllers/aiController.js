@@ -11,7 +11,7 @@ function setSSEHeaders(res) {
 
 // POST /api/v1/ai/summarize
 async function summarize(req, res) {
-  const { content } = req.body;
+  const { content, mode } = req.body;
 
   if (!content || !content.trim()) {
     return res.status(400).json({ success: false, message: '請提供文章內容' });
@@ -20,7 +20,7 @@ async function summarize(req, res) {
   setSSEHeaders(res);
 
   try {
-    await aiService.streamArticleSummary(content, res);
+    await aiService.streamArticleSummary(content, res, mode);
   } catch (err) {
     console.error('AI summarize error:', err.message);
     res.write(`data: ${JSON.stringify({ error: 'AI 服務呼叫失敗' })}\n\n`);

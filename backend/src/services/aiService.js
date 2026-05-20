@@ -125,14 +125,63 @@ async function streamToSSE(systemPrompt, userPrompt, res) {
   return fullText
 }
 
+// ── 快速指令提示詞 ────────────────────────────────────────────
+function buildQuickSummaryPrompt(content) {
+  return (
+    `/no_think\n` +
+    `請對以下文章提供簡易摘要：\n\n${content}\n\n` +
+    `---\n\n` +
+    `## 一句話摘要\n（用一句話說清楚文章核心）\n\n` +
+    `## 三大重點\n- 重點一\n- 重點二\n- 重點三\n\n` +
+    `## 適合閱讀對象\n（哪些人最需要讀這篇）`
+  )
+}
+
+function buildDetailedSummaryPrompt(content) {
+  return (
+    `/no_think\n` +
+    `請對以下文章進行深入分析：\n\n${content}\n\n` +
+    `---\n\n` +
+    `## 文章概述\n（背景、目的與範疇）\n\n` +
+    `## 核心論點\n（主要觀點與論據）\n\n` +
+    `## 關鍵細節\n（重要技術細節或事實數據）\n\n` +
+    `## 優缺點與適用場景\n\n` +
+    `## 結論與建議`
+  )
+}
+
+function buildStepGuidePrompt(content) {
+  return (
+    `/no_think\n` +
+    `請將以下文章的操作方式或流程整理為詳細步驟說明：\n\n${content}\n\n` +
+    `---\n\n` +
+    `## 前置準備\n（必要工具、環境與先備知識）\n\n` +
+    `## 完整步驟\n1. 步驟一\n2. 步驟二\n（依此類推，每步說明清楚）\n\n` +
+    `## 注意事項\n（容易出錯或需要特別注意的地方）\n\n` +
+    `## 常見問題 Q&A`
+  )
+}
+
 // ── 公開介面 ──────────────────────────────────────────────────
 /**
  * 文章解析助手（首頁）
+ * @param {string} content
+ * @param {object} res
+ * @param {string} [mode] - 'default' | 'quick_summary' | 'detailed_summary' | 'step_guide'
  */
-async function streamArticleSummary(transcript, res) {
+async function streamArticleSummary(content, res, mode) {
+  const modeMap = {
+    quick_summary:    { system: SYSTEM_PROMPTS.quickSummary,    build: buildQuickSummaryPrompt },
+    detailed_summary: { system: SYSTEM_PROMPTS.detailedSummary, build: buildDetailedSummaryPrompt },
+    step_guide:       { system: SYSTEM_PROMPTS.stepGuide,       build: buildStepGuidePrompt },
+  }
+  const selected = modeMap[mode]
+  if (selected) {
+    return streamToSSE(selected.system, selected.build(content), res)
+  }
   return streamToSSE(
     SYSTEM_PROMPTS.summarize,
-    buildSummarizePrompt(transcript),
+    buildSummarizePrompt(content),
     res,
   )
 }

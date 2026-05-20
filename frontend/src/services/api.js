@@ -897,7 +897,7 @@ export const aiService = {
    * @param {{ onDelta, onDone, onError }} callbacks
    * @param {AbortSignal} [signal]
    */
-  async streamSummarize(content, callbacks, signal) {
+  async streamSummarize(content, callbacks, signal, mode = 'default') {
     const token = sessionStorage.getItem('kb_token')
     const res = await fetch(`${http.defaults.baseURL}/ai/summarize`, {
       method:  'POST',
@@ -905,7 +905,7 @@ export const aiService = {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body:   JSON.stringify({ content }),
+      body:   JSON.stringify({ content, mode }),
       signal,
     })
     if (!res.ok) {

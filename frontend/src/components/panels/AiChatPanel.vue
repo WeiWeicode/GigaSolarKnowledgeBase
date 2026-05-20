@@ -145,6 +145,20 @@
             <el-checkbox v-model="useContext" size="small">包含目前文章內容作為上下文</el-checkbox>
           </div>
 
+          <!-- 快速指令（有指定文章且在 chat 模式時顯示） -->
+          <div v-if="currentMode === 'chat' && (referencedArticles.length || props.articleId)" class="quick-commands">
+            <span class="quick-cmd-label">快速指令：</span>
+            <el-button
+              v-for="cmd in QUICK_COMMANDS"
+              :key="cmd.key"
+              size="small"
+              plain
+              :disabled="streaming"
+              class="quick-cmd-btn"
+              @click="sendCommand(cmd.key)"
+            >{{ cmd.label }}</el-button>
+          </div>
+
           <div class="input-row">
             <el-input
               v-if="currentMode !== 'correct'"
@@ -215,6 +229,12 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'apply', 'tagAdded'])
 
 const dirStore = useDirectoryStore()
+
+const QUICK_COMMANDS = [
+  { key: 'quick_summary',    label: '簡易摘要' },
+  { key: 'detailed_summary', label: '詳細摘要' },
+  { key: 'step_guide',       label: '步驟詳解' },
+]
 
 const currentMode  = ref('chat')
 const inputText    = ref('')
@@ -414,6 +434,77 @@ function updateHtml(msg) {
 async function scrollToBottom() {
   await nextTick()
   if (messageArea.value) messageArea.value.scrollTop = messageArea.value.scrollHeight
+}
+
+// ── 快速指令：送出預設提示詞 ────────────────────────────────
+async function sendCommand(cmdKey) {
+  if (streaming.value) return
+
+  const cmd = QUICK_COMMANDS.find(c => c.key === cmdKey)
+  const userDisplayText = cmd?.label || cmdKey
+
+  const userMsg = { id: Date.now(), role: 'user', content: userDisplayText, htmlContent: '' }
+  messages.value.push(userMsg)
+  updateHtml(userMsg)
+
+  const capturedRefs = [...referencedArticles.value]
+  referencedArticles.value = []
+  await scrollToBottom()
+
+  streaming.value = true
+  messages.value.push({
+    id: Date.now() + 1, role: 'ai',
+    content: '', htmlContent: '', streaming: true, keywords: [], addedKeywords: [], canApply: false,
+  })
+  const aiMsg = messages.value[messages.value.length - 1]
+
+  const onDelta = (delta) => { aiMsg.content += delta; scrollToBottom() }
+  const onDone  = async () => {
+    updateHtml(aiMsg)
+    await nextTick()
+    aiMsg.streaming = false
+    streaming.value = false
+    aiMsg.keywords  = extractKeywords(aiMsg.content)
+    scrollToBottom()
+  }
+  const onError = async () => {
+    aiMsg.streaming = false
+    streaming.value = false
+    aiMsg.content  += '\n\n> ⚠️ AI 服務發生錯誤，請稍後再試。'
+    updateHtml(aiMsg)
+    scrollToBottom()
+  }
+
+  try {
+    abortController = new AbortController()
+    const signal    = abortController.signal
+
+    // 抓指定文章內容
+    let articleContent = ''
+    if (capturedRefs.length) {
+      const fetched = await Promise.allSettled(
+        capturedRefs.map(a => articleService.getById(a.id))
+      )
+      articleContent = fetched
+        .filter(r => r.status === 'fulfilled')
+        .map(r => `\n\n---\n📄 文章「${r.value.title}」：\n${r.value.content || ''}`)
+        .join('')
+    }
+    if (!articleContent && props.contextContent) {
+      articleContent = `\n\n---\n文章內文：\n${props.contextContent}`
+    }
+
+    await aiService.streamSummarize(articleContent, { onDelta, onDone, onError }, signal, cmdKey)
+  } catch (err) {
+    if (err.name === 'AbortError') return
+    streaming.value  = false
+    aiMsg.streaming  = false
+    aiMsg.content    = `> ⚠️ 錯誤：${err.message}`
+    updateHtml(aiMsg)
+    ElMessage.error(err.message || 'AI 服務呼叫失敗')
+  } finally {
+    abortController = null
+  }
 }
 
 // ── 送出訊息 ─────────────────────────────────────────────────
@@ -695,6 +786,16 @@ async function sendMessage() {
 }
 .mention-item:hover { background: var(--color-surface-2); color: var(--color-primary); }
 .mention-empty { padding: 12px; font-size: 12px; color: var(--color-text-muted); text-align: center; }
+
+/* Quick commands */
+.quick-commands {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  padding: 6px 8px; background: rgba(124,58,237,.04);
+  border-radius: 6px; border: 1px dashed rgba(124,58,237,.25);
+}
+.quick-cmd-label { font-size: 11px; color: var(--color-text-muted); flex-shrink: 0; }
+.quick-cmd-btn { border-color: rgba(124,58,237,.35) !important; color: #7c3aed !important; }
+.quick-cmd-btn:hover { background: rgba(124,58,237,.08) !important; }
 
 /* Upload */
 .upload-area { display: flex; flex-direction: column; gap: 4px; }
