@@ -427,6 +427,52 @@ async function updateArticle(req, res) {
   }
 }
 
+// ── AI 建議標籤：新增標籤至文章（不覆蓋現有標籤）────────────
+async function addTagsToArticle(req, res) {
+  try {
+    const { id } = req.params;
+    const { tagNames } = req.body;
+
+    if (!Array.isArray(tagNames) || tagNames.length === 0) {
+      return res.status(400).json({ success: false, message: '請提供標籤名稱' });
+    }
+
+    const article = await Article.findByPk(id, {
+      include: [{ model: ArticleEditor, as: 'Editors' }],
+    });
+
+    if (!article) {
+      return res.status(404).json({ success: false, message: '文章不存在' });
+    }
+
+    const isEditor  = article.Editors.some(e => e.editor_account === req.user.員工工號);
+    const isCreator = article.created_by === req.user.員工工號;
+    if (!isCreator && !isEditor && req.user.role !== 'ADMIN' && req.user.role !== 'MANAGER') {
+      return res.status(403).json({ success: false, message: '您無權修改此文章標籤' });
+    }
+
+    const tags = await Promise.all(
+      tagNames.map(name =>
+        Tag.findOrCreate({
+          where:    { name: name.trim() },
+          defaults: { name: name.trim() },
+        }).then(([record]) => record)
+      )
+    );
+
+    await article.addTags(tags);
+
+    const updatedTags = await article.getTags();
+    return res.json({
+      success: true,
+      data: updatedTags.map(t => ({ id: t.id, name: t.name })),
+    });
+  } catch (error) {
+    console.error('addTagsToArticle error:', error.message);
+    return res.status(500).json({ success: false, message: '新增標籤失敗' });
+  }
+}
+
 // ── 圖片上傳 ──────────────────────────────────────────────────
 async function uploadImage(req, res) {
   try {
@@ -447,5 +493,6 @@ module.exports = {
   searchArticles,
   createArticle,
   updateArticle,
+  addTagsToArticle,
   uploadImage,
 };

@@ -530,6 +530,16 @@ export const articleService = {
     return normalizeArticle(res.data)  // Article
   },
 
+  async addTags(id, tagNames) {
+    if (USE_MOCK) {
+      await delay(200)
+      return { success: true, data: tagNames.map((name, i) => ({ id: Date.now() + i, name })) }
+    }
+    // PATCH /api/v1/articles/:id/tags
+    const res = await http.patch(`/articles/${id}/tags`, { tagNames })
+    return res.data  // { success: true, data: Tag[] }
+  },
+
   async uploadImage(file) {
     if (USE_MOCK) { await delay(800); return { url: '/uploads/demo/' + file.name } }
 
@@ -848,5 +858,87 @@ export const crossDeptService = {
   },
 }
 
+
+// ── AI SSE Stream Helper ──────────────────────────────────────
+async function readSSEStream(response, { onDelta, onDone, onError } = {}) {
+  const reader  = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer    = ''
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop()
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const data = line.slice(6).trim()
+        if (data === '[DONE]') { onDone?.(); return }
+        try {
+          const parsed = JSON.parse(data)
+          if (parsed.error) { onError?.(parsed.error); return }
+          if (parsed.delta) onDelta?.(parsed.delta)
+        } catch { /* 略過格式異常 chunk */ }
+      }
+    }
+    onDone?.()
+  } catch (err) {
+    onError?.(err.message)
+  } finally {
+    reader.releaseLock()
+  }
+}
+
+export const aiService = {
+  /**
+   * 文章解析助手（首頁 AI 問答）
+   * @param {string} content
+   * @param {{ onDelta, onDone, onError }} callbacks
+   * @param {AbortSignal} [signal]
+   */
+  async streamSummarize(content, callbacks, signal) {
+    const token = sessionStorage.getItem('kb_token')
+    const res = await fetch(`${http.defaults.baseURL}/ai/summarize`, {
+      method:  'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body:   JSON.stringify({ content }),
+      signal,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.message || `HTTP ${res.status}`)
+    }
+    await readSSEStream(res, callbacks)
+  },
+
+  /**
+   * 寫作助手（文章編輯 / 新建頁）
+   * @param {FormData|{ content: string }} payload
+   * @param {{ onDelta, onDone, onError }} callbacks
+   * @param {AbortSignal} [signal]
+   */
+  async streamWritingAssist(payload, callbacks, signal) {
+    const token      = sessionStorage.getItem('kb_token')
+    const isFormData = payload instanceof FormData
+    const res = await fetch(`${http.defaults.baseURL}/ai/writing-assist`, {
+      method:  'POST',
+      headers: {
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body:   isFormData ? payload : JSON.stringify(payload),
+      signal,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.message || `HTTP ${res.status}`)
+    }
+    await readSSEStream(res, callbacks)
+  },
+}
 
 export default http

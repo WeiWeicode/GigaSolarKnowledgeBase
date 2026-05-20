@@ -79,6 +79,13 @@ router.post('/', articleController.createArticle);
  */
 router.put('/:id', articleController.updateArticle);
 
+/**
+ * @route PATCH /api/v1/articles/:id/tags
+ * @desc  AI 建議標籤：新增標籤至文章（findOrCreate + addTags，不覆蓋現有標籤）
+ * @body  { tagNames: string[] }
+ */
+router.patch('/:id/tags', articleController.addTagsToArticle);
+
 // --- 子路由 ---
 router.use('/:articleId/comments', commentRouter);
 router.use('/:articleId/versions', versionRouter);

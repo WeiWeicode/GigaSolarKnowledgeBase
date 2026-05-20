@@ -38,6 +38,7 @@ app.use(`${API}/attachments`,   require('./routes/attachments'));
 app.use(`${API}/comments`,      require('./routes/comments_standalone'));
 app.use(`${API}/notifications`,      require('./routes/notifications'));
 app.use(`${API}/cross-departments`,  require('./routes/crossDepartments'));
+app.use(`${API}/ai`,                 require('./routes/ai'));
 
 // ── 404 ───────────────────────────────────────────────────────
 app.use((req, res) => {

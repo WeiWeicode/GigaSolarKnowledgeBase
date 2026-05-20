@@ -12,7 +12,7 @@
 ---
 
 # 優化標籤功能
-狀態: 待規劃
+狀態: ✅ 完成
 新增需求日期: 2026-05-18
 預期功能:
 1. 新增部門：標籤需綁定多個部門，供跨部門使用（使用陣列，建立時順便寫入）。
@@ -46,7 +46,7 @@
    - 更新既有顯示標籤的元件，依照部門狀態或公開狀態呈現不同的排序方式。
 實際測試:
 實際調整項目:
-完成日期:
+完成日期: 2026-05-20
 
 ---
 
@@ -112,3 +112,125 @@
   - `checkItemAccess` 重寫為與 `ArticleView.vue` 一致的邏輯：指定人員優先 → 前三碼＋跨部門 → AND 職級，結果為 `primaryAccess && passLevel`。
 實際測試:
 完成日期: 2026-05-18
+
+---
+
+# 後端 AI 功能開發
+狀態: 待規劃
+新增需求日期: 2026-05-20
+預期功能:
+1. **aiService.js**：以 SSE 串流方式將 AI 摘要輸出到 Express Response，串接本地 Ollama 服務。
+   - 使用 `/api/chat` + `think: false`，避免 qwen 進入思考模式。
+   - 參數：`transcript`（完整逐字稿文字）、`res`（已設定 SSE headers 的 Express Response）。
+   - 回傳：`Promise<string>` 完整摘要文字。
+   - 使用 `node-fetch`，在 Docker Node.js 環境中串流更穩定。
+2. **環境變數新增**：
+   - `OLLAMA_MODEL`：Ollama 模型名稱（由開發者填入 .env）。
+   - `OLLAMA_URL`：Ollama 服務位址。
+   - 程式內使用：`model = config.OLLAMA_MODEL`、`url = \`${config.OLLAMA_URL}/api/chat\``。
+3. **AI Prompt 設計**：分兩個角色，各自有獨立的 systemPrompt 與 userPrompt 輸出格式。
+   - **角色一：文章解析助手**（放於首頁）
+     - systemPrompt：文章解析助手角色定義。
+     - userPrompt 輸出格式：
+       ```
+       ## 核心摘要：一句話總結。
+       ## 關鍵重點：使用 bullet points 列表。
+       ## 深入分析：根據文章屬性區分（例如：技術拆解、邏輯辯證）。
+       ## 結論與洞察：AI 總結出的價值點。
+       ```
+   - **角色二：寫作助手**（放於編輯 / 新建文章頁）
+     - systemPrompt：寫作助手角色定義，支援 Word 解析或文章生成。
+     - userPrompt 輸出格式：
+       ```
+       # 核心摘要
+       (一句話總結本文核心)
+
+       ## 關鍵觀點 / 技術重點
+       - 觀點 1...
+       - 觀點 2...
+
+       ## 詳細內容
+       (正文內容，請使用標準 Markdown 排版)
+
+       ## 參考資料 / 來源
+       - Word 來源檔案：(若從 Word 轉換)
+       ```
+實際調整項目:
+**後端**
+- `backend/src/services/aiService.js`（新增）：SSE 串流核心，`streamArticleSummary`（文章解析助手）與 `streamWritingAssist`（寫作助手），使用 `node-fetch@2` 呼叫 Ollama `/api/chat`，`think: false` 停用思考模式。
+- `backend/src/controllers/aiController.js`（新增）：`summarize`（POST）與 `writingAssist`（POST）；Word 上傳使用 `mammoth` 解析文字後傳入 service。
+- `backend/src/routes/ai.js`（新增）：掛載兩個端點，`/writing-assist` 使用 multer memoryStorage，限制 `.doc/.docx`、5 MB；multer 錯誤統一由 `handleUploadError` middleware 回應友善訊息。
+- `backend/src/index.js`：掛載 `/api/v1/ai` 路由。
+- `backend/.env`：新增 `OLLAMA_URL`、`OLLAMA_MODEL`（值由開發者填入）。
+- 新安裝套件：`node-fetch@2`、`mammoth`。
+預期調整項目:
+- `backend/src/services/aiService.js`：實作 SSE 串流邏輯、兩組 prompt（解析助手、寫作助手）、Ollama API 呼叫。
+- `backend/.env` / `backend/src/config/`：新增 `OLLAMA_MODEL`、`OLLAMA_URL` 設定。
+- 後端 Route / Controller：新增對應 AI 功能的 API 端點，供前端首頁與文章編輯頁呼叫。
+- 前端：串接 SSE 端點（首頁 AI 問答、編輯頁寫作助手），顯示串流回應。
+  - 首頁：AI 回應以標籤 / 關鍵字呈現，可點擊跳轉至對應文章或搜尋結果。
+  - 編輯頁：Word 上傳限制 `.doc` / `.docx`，檔案大小上限 5 MB，前端需驗證並顯示友善錯誤訊息。
+  - AI 產生文章後提供「一鍵貼入」按鈕，將 Markdown 內容貼入新建或編輯中的 Vditor 編輯器，貼入前需 user 確認以防覆蓋既有內容。
+規劃調整內容:
+1. **Backend - aiService.js**:
+   - 實作 `streamArticleSummary(transcript, res)` 函式（文章解析助手）。
+   - 實作 `streamWritingAssist(content, res)` 函式（寫作助手）。
+   - 兩個函式共用 Ollama `/api/chat` 呼叫邏輯，差異在 systemPrompt / userPrompt。
+   - 使用 `node-fetch` 發送請求，逐 chunk 轉發至 SSE response。
+2. **Backend - config**:
+   - `config.js` 讀取 `process.env.OLLAMA_MODEL`、`process.env.OLLAMA_URL`。
+3. **Backend - Route / Controller**:
+   - `POST /api/v1/ai/summarize`：呼叫文章解析助手，回應 SSE。
+   - `POST /api/v1/ai/writing-assist`：呼叫寫作助手，回應 SSE。
+4. **Frontend**:
+   - 首頁 AI 問答：串接 `/api/v1/ai/summarize`，以 `EventSource` 顯示解析結果。
+     - 輸出以標籤、關鍵字方式引導 user 前往指定文章（可點擊標籤 / 關鍵字跳轉搜尋或文章頁）。
+   - 文章編輯頁：串接 `/api/v1/ai/writing-assist`。
+     - 上傳限制：僅接受 Word 檔案（`.doc`、`.docx`），MIME type 驗證。
+     - 檔案大小上限：5 MB，超過需提示錯誤並阻擋上傳。
+     - AI 產生文章後，顯示預覽區塊，提供「一鍵貼入」按鈕：
+       - 若在編輯文章頁：將 AI 產生的 Markdown 內容直接貼入 Vditor 編輯器。
+       - 若在新建文章頁：同上，貼入空白的 Vditor 編輯器。
+       - 貼入前需提示 user 確認（避免覆蓋既有內容），user 確認後才執行。
+實際調整項目:
+**後端**
+- `backend/src/services/aiService.js`（新增）：SSE 串流核心，`streamArticleSummary`、`streamWritingAssist`，`node-fetch@2` + `think: false`。
+- `backend/src/controllers/aiController.js`（新增）：兩個 handler，Word 用 `mammoth` 解析。
+- `backend/src/routes/ai.js`（新增）：multer memoryStorage，限 `.doc/.docx`、5 MB，錯誤由 `handleUploadError` 統一回應。
+- `backend/src/index.js`：掛載 `/api/v1/ai`。
+- `backend/.env`：新增 `OLLAMA_URL`、`OLLAMA_MODEL`。
+- 新安裝套件：`node-fetch@2`、`mammoth`。
+
+**前端**
+- `frontend/src/services/api.js`：新增 `readSSEStream` helper（fetch ReadableStream 解析）與 `aiService`（`streamSummarize`、`streamWritingAssist`），支援 FormData 與 JSON 兩種 payload，傳入 `AbortSignal` 支援取消。
+- `frontend/src/components/panels/AiChatPanel.vue`：全面改寫：
+  - `chat` 模式：呼叫 `aiService.streamSummarize`，回應結束後擷取 `**粗體**` 關鍵字為可點擊 chip，點擊導向首頁搜尋（`/?q=keyword`）。
+  - `generate` 模式：提供 Word 上傳按鈕（前端驗證 `.doc/.docx`、5 MB），呼叫 `aiService.streamWritingAssist`；AI 生成完畢後顯示「一鍵貼入編輯器」按鈕，點擊跳出 `ElMessageBox.confirm` 確認後 `emit('apply', content)`。
+  - `correct` 模式：以 `contextContent` prop 呼叫 `aiService.streamWritingAssist`，生成完畢同樣顯示「一鍵貼入」按鈕。
+  - 所有模式使用 `AbortController` 於面板關閉時中止串流；節流渲染（每 100ms 更新一次 HTML）。
+- `frontend/src/views/HomeView.vue`：引入 `useRoute`，`onMounted` 與 `watch(route.query.q)` 自動帶入 AI 關鍵字 chip 的搜尋詞並觸發搜尋。
+實際測試:
+完成日期:
+
+---
+
+# 優化 AI 面板「新對話」按鈕位置與輸入框高度對齊
+狀態: ✅ 完成
+新增需求日期: 2026-05-20
+預期功能:
+1. 將原本置於 AI 面板頂部（Header）的新對話按鈕移至底部輸入框下方的提示訊息旁，解決因頂部空間不足而導致按鈕被遮擋或不易被看見的問題。
+2. 讓 AI 面板底部的「送出」按鈕與左側「輸入框」在各種字數/字型下都能保持高度一致與對齊。
+預期調整項目:
+- 前端調整：
+  - `AiChatPanel.vue`：
+    - 將「新對話」按鈕從 header 移到 footer，並與 `input-hint` 橫向並排，新增自訂 flex 佈局美化。
+    - 調整輸入列的 flex 佈局為 `align-items: stretch`，使送出按鈕的高度與左側輸入框完全拉平一致。
+規劃調整內容:
+1. **Frontend**:
+   - 修改 `AiChatPanel.vue` 的 `<template>`，移除 header 內的新對話按鈕。
+   - 在 footer 部分的提示文字旁新增新對話按鈕，包裝於 `.input-footer-row`。
+   - 修改 CSS，將 `.input-row` 的 `align-items` 從 `flex-end` 改為 `stretch`，並將 `.send-btn` 的寫死高度 `64px` 改為 `auto` 以及 `align-self: stretch`。
+實際調整項目:
+- `frontend/src/components/panels/AiChatPanel.vue`：搬移新對話按鈕，設定 `.input-footer-row` 為 flex 排版，限制按鈕大小；同時調整輸入框列排版，讓送出按鈕與輸入框高度自適應對齊。
+實際測試: 打開 AI 面板，新對話按鈕成功顯示於底部提示字右側，且送出按鈕與左側輸入框高度完美一致且完全對齊。
+完成日期: 2026-05-20

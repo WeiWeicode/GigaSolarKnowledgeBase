@@ -10,10 +10,34 @@
 | # | 優先度 | 類別 | 摘要 | 狀態 |
 |---|--------|------|------|------|
 | B-06 | 🗒️ 低 | Admin | 後台功能端點尚未建立：垃圾桶管理、系統日誌、AI 設定儲存、儲存空間查詢 | ⏳ 待修 |
+| B-07 | 🔴 高 | AI | Ollama `think: false` 放在 `options` 內無效；`X-Accel-Buffering: no` 未設定導致 Nginx 緩衝 SSE | ✅ 已修正 |
+| B-08 | 🟡 中 | Article/Tag | 新增 `PATCH /api/v1/articles/:id/tags` 輕量 endpoint（AI 建議標籤一鍵加入） | ✅ 已修正 |
 
 ---
 
 ## 已修正項目
+
+### [B-08] AI 建議標籤：新增 `PATCH /api/v1/articles/:id/tags` endpoint
+- **狀態**：✅ 已修正（2026-05-20）
+- **根本原因**：
+  1. 原先前端呼叫 `POST /api/v1/tags` 新增標籤，但此路由需要 `MANAGER`/`ADMIN` 角色，一般使用者無法呼叫 → catch 靜默失敗，網路面板無任何請求。
+  2. 後端沒有文章標籤的專屬輕量 endpoint，只有需要完整 payload 的 `PUT /articles/:id`，無法簡單加入單一標籤。
+- **修正檔案**：
+  - `backend/src/controllers/articleController.js`：新增 `addTagsToArticle`（`Tag.findOrCreate` + `article.addTags`，不覆蓋現有標籤，無需 MANAGER 角色）
+  - `backend/src/routes/articles.js`：新增 `PATCH /:id/tags`
+  - `frontend/src/services/api.js`：新增 `articleService.addTags(id, tagNames[])`
+  - `frontend/src/views/ArticleView.vue`：`onAiAddKeyword` 改為單一 `articleService.addTags` 呼叫，回傳的 `data` 同步更新 `article.tags` 和 `form.tagIds`
+
+---
+
+### [B-07] AI SSE 串流空白：`think` 參數位置錯誤 & Nginx 緩衝
+- **狀態**：✅ 已修正（2026-05-20）
+- **根本原因**：
+  1. qwen3 的 `think: false` 需放在 Ollama API 請求的**頂層**（與 `model`、`stream` 同層），而非 `options` 內；放在 `options` 裡會被忽略，導致模型進入思考模式後輸出格式異常，前端收不到 delta。
+  2. 後端未設定 `X-Accel-Buffering: no`，若部署於 Nginx 反向代理前，SSE 回應會被緩衝，前端要等到連線關閉才一次收到所有資料，造成視覺上串流無效果。
+- **修正檔案**：
+  - `backend/src/services/aiService.js`：`think: false` 移至請求頂層；`.on('data')` 改為 `for await...of` 讀取 NDJSON 串流（Docker 環境更穩定）；`node-fetch` 改為動態 import；userPrompt 加入 `/no_think\n` 前綴雙重保險；新增 `res.writableEnded` 檢查防止寫入已關閉的 Response；timeout 設為 300000ms。
+  - `backend/src/controllers/aiController.js`：`setSSEHeaders` 新增 `X-Accel-Buffering: no`
 
 | # | 摘要 | 修正日期 | 影響範圍 |
 |---|------|----------|----------|

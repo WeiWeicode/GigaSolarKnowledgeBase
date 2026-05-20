@@ -296,9 +296,61 @@
 
 ---
 
+### [BUG-026] AI 面板串流無效 & Markdown 未渲染
+- **狀態**：✅ 已修正（2026-05-20）
+- **根本原因**：
+  1. **Vue 3 Reactivity bug**：`const aiMsg = {...}; messages.value.push(aiMsg)` 後，`aiMsg` 指向原始物件（非 reactive proxy），後續 `aiMsg.content += delta` 不觸發 Vue re-render，導致串流文字不出現。修正：push 後以 `messages.value[messages.value.length - 1]` 取得 reactive proxy。
+  2. **Markdown 未渲染（第一次修正）**：串流中改用 `{{ msg.content }}` 純文字逐字顯示；串流結束後呼叫 `Vditor.md2html` 轉換為 HTML。
+  3. **Markdown 未渲染（最終修正）**：`Vditor.md2html` 在 Vditor 3.11.2 環境中拋出例外，catch block 直接將 raw markdown 傳入 `v-html`，造成 `**`、`##` 符號明文可見。改用 `marked.js`（`marked.parse`）取代，並補強 `.markdown-body` CSS 樣式（標題、段落、清單、blockquote、code block、表格）。
+- **修正檔案**：`frontend/src/components/panels/AiChatPanel.vue`
+- **相依變更**：`cd frontend && npm install marked`（已執行，v15.x）
+
+---
+
+### [FEAT-001] AI 面板 Tab 依情境顯示 & 新對話 & # 指定文章
+- **狀態**：✅ 已完成（2026-05-20）
+- **修改檔案**：
+  - `frontend/src/components/panels/AiChatPanel.vue`
+  - `frontend/src/views/HomeView.vue`
+  - `frontend/src/views/ArticleView.vue`
+- **修改內容**：
+  1. **AiChatPanel** 新增 `allowedModes` prop，依傳入陣列控制顯示的 Tab；只有一個 Tab 時自動隱藏 Tab bar 並切換到該 mode。
+  2. **HomeView** 傳入 `:allowed-modes="['chat']"`，首頁只顯示「AI 問答」Tab。
+  3. **ArticleView** 新增 `aiAllowedModes` computed（create→`['generate']`、isEditing→`['correct']`、view→`['chat']`），動態傳入 AiChatPanel。
+  4. **新對話按鈕**：改為帶文字的明顯小按鈕（`size="small" plain`），顯示 Refresh 圖示 +「新對話」文字，點擊清空 messages、referencedArticles、inputText、selectedFile。
+  5. **# 文章指定**：chat 模式輸入 `#` 後觸發文章搜尋（300ms debounce），依當前 scope（dept/public）查詢文章，選擇後顯示為「指定文章」chip；送出時自動 `articleService.getById` 取得文章內文，附加在 prompt 中一同送給 AI。
+  6. **AI 建議關鍵字**（更新）：移除原先「點擊跳轉搜尋」行為；改為顯示兩區：「文章現有標籤」（唯讀，info 色）與「AI 建議關鍵字」（點擊發出 `addKeyword` 事件 → ArticleView 新增至 `form.tagIds`；已新增的顯示綠色勾選 ✓）。
+- **驗證方式**：
+  - 首頁 AI 面板只見「AI 問答」Tab。
+  - 建立文章頁 AI 面板只見「產生文章」Tab。
+  - 編輯文章頁 AI 面板只見「校正文章」Tab。
+  - Header 右側可看到「新對話」按鈕（非純圖示），點擊後對話清空。
+  - AI 回答後底部顯示「文章現有標籤」（若有）和「AI 建議關鍵字」，點擊建議關鍵字會顯示 ✓ 並觸發 `addKeyword` 事件，ArticleView 自動加入標籤。
+
+---
+
 ### [BUG-025] 搜尋知識庫缺少清空按鈕
 - **狀態**：✅ 已修正（2026-05-19）
 - **根本原因**：`HomeView.vue` 中原先未實作清空搜尋條件的功能與 UI 按鈕。
 - **修正檔案**：`frontend/src/views/HomeView.vue`
 - **修正內容**：在搜尋輸入框旁新增「清空」按鈕，並實作 `clearSearch` 函式，點擊後會清除關鍵字、選擇的標籤，並將搜尋結果與搜尋狀態恢復至預設。
 - **驗證方式**：在搜尋欄輸入關鍵字或選擇標籤後，點擊「清空」按鈕，確認輸入框、標籤與搜尋結果均被清除並恢復為預設狀態。
+
+---
+
+### [FEAT-002] 優化 AI 面板「新對話」按鈕位置與輸入框高度對齊
+- **狀態**：✅ 已完成（2026-05-20）
+- **根本原因**：
+  1. 原本的「新對話」按鈕位於 AI 面板的 Header，因空間有限容易被擠壓或遮擋導致使用者不易看到。
+  2. 原本的「送出」按鈕高度為寫死的 `64px`，而左側的 Element Plus textarea 輸入框高度會隨字數或字型撐開，導致左右兩者高度無法對齊，視覺上有落差。
+- **修改檔案**：`frontend/src/components/panels/AiChatPanel.vue`
+- **修改內容**：
+  1. 將「新對話」按鈕自頂部的 `panel-header-right` 中移除。
+  2. 於底部 `panel-footer` 區域，在輸入提示（`input-hint`）的右側，新增一個 `input-footer-row` 將輸入提示與「新對話」按鈕並排。
+  3. 設定 `.input-footer-row` 樣式為 `display: flex; align-items: center; justify-content: space-between;`，並適度美化。
+  4. 修改 `.input-row` 的屬性，將 `align-items: flex-end` 調整為 `align-items: stretch`。
+  5. 修改 `.send-btn` 的屬性，將寫死的 `height: 64px` 調整為 `height: auto` 並加上 `align-self: stretch`，使送出按鈕的高度能與左側輸入框完美拉伸一致。
+- **驗證方式**：打開 AI 助手面板：
+  - 確認頂部沒有「新對話」按鈕，而是移到了底部輸入框下方提示訊息的右側。
+  - 確認右側「送出」飛機按鈕的高度與左側輸入對話框高度完全一致，且能隨對話框正常拉伸與對齊。
+

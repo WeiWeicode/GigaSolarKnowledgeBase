@@ -124,14 +124,14 @@
       </section>
     </div>
 
-    <!-- AI Chat Panel -->
-    <AiChatPanel v-model="aiPanelVisible" />
+    <!-- AI Chat Panel：首頁只開放 AI 問答 -->
+    <AiChatPanel v-model="aiPanelVisible" :allowed-modes="['chat']" />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useNotificationStore } from '@/store/notification.js'
 import { useDirectoryStore } from '@/store/directory.js'
 import { useAuthStore } from '@/store/auth.js'
@@ -141,6 +141,7 @@ import AiChatPanel from '@/components/panels/AiChatPanel.vue'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
+const route  = useRoute()
 const notifStore = useNotificationStore()
 const dirStore = useDirectoryStore()
 const auth = useAuthStore()
@@ -264,8 +265,15 @@ async function markRead(id) {
   await notifStore.markAsRead(id)
 }
 
+// 接收 AI 關鍵字 chip 的跳轉（?q=keyword）
+watch(() => route.query.q, (q) => {
+  if (q) { keyword.value = String(q); onSearch() }
+}, { immediate: false })
+
 onMounted(async () => {
   await loadTags()
+  // AI 關鍵字 chip 點擊後導向時，自動帶入搜尋詞
+  if (route.query.q) { keyword.value = String(route.query.q); onSearch() }
   try {
     await notifStore.fetchAll()
   } catch {

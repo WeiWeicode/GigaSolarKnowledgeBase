@@ -246,7 +246,15 @@
 
     <CommentPanel v-model="showCommentPanel" :article-id="id" />
     <VersionHistoryPanel v-model="showHistoryPanel" :article-id="id" @preview="onVersionPreview" />
-    <AiChatPanel v-model="showAiPanel" :context-content="form.content" @apply="applyAiContent" />
+    <AiChatPanel
+      v-model="showAiPanel"
+      :context-content="form.content"
+      :article-id="props.id"
+      :context-tags="article?.tags || []"
+      :allowed-modes="aiAllowedModes"
+      @apply="applyAiContent"
+      @tag-added="onAiTagAdded"
+    />
 
     <!-- Dir Picker -->
     <el-dialog v-model="showDirPicker" title="選擇目錄" width="500px">
@@ -390,6 +398,13 @@ const dirPickerTree = computed(() => {
   }
   return filterDirs(dirStore.filteredTree)
 })
+// AI 面板 Tab 依當前模式決定：建立→產生文章、編輯→校正文章、瀏覽→AI 問答
+const aiAllowedModes = computed(() => {
+  if (props.mode === 'create') return ['generate']
+  if (isEditing.value)         return ['correct']
+  return ['chat']
+})
+
 const filteredAttachments = computed(() => {
   // 後端 Attachment 不回傳 directories，直接顯示所有可存取的附件
   // TODO：待 B-03 後端補充 directoryIds 後，可再恙復目錄範圍過濾
@@ -556,6 +571,14 @@ watch(() => form.isPublished, (val) => {
 function findTrashNode(nodes) { if (!nodes) return null; for (const n of nodes) { if (n.type === 'trash') return n; if (n.children) { const f = findTrashNode(n.children); if (f) return f } } return null }
 
 async function createTag(name) { const t = await tagService.create(name); tags.value.push(t); form.tagIds.push(t.id) }
+
+function onAiTagAdded(kw, articleIds, updatedTags) {
+  // 若此文章是目標之一，更新 article.tags 顯示
+  if (articleIds.includes(Number(props.id)) && updatedTags?.length) {
+    article.value = { ...article.value, tags: updatedTags }
+    form.tagIds = updatedTags.map(t => t.id)
+  }
+}
 
 async function loadArticle() {
   if (!props.id) return
