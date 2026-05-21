@@ -12,11 +12,12 @@ const upload = multer({
     const allowed = [
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/pdf',
     ];
     if (allowed.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('僅接受 .doc 或 .docx 格式的 Word 檔案'));
+      cb(new Error('僅接受 .doc、.docx 或 .pdf 格式的檔案'));
     }
   },
 });

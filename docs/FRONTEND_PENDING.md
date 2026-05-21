@@ -364,6 +364,23 @@
 
 ---
 
+### [FEAT-004] AI 面板「產生文章」支援上傳 PDF 檔案
+- **狀態**：✅ 已完成（2026-05-21）
+- **修改檔案**：
+  - `frontend/src/components/panels/AiChatPanel.vue`
+  - `backend/src/routes/ai.js`
+  - `backend/src/controllers/aiController.js`
+  - `backend/package.json`（新增 `pdf-parse@1.1.1` 依賴；v2.x API 不相容，需固定 v1.x）
+- **修改內容**：
+  1. 前端 file input `accept` 屬性加入 `.pdf`。
+  2. `onFileSelected` MIME 驗證加入 `application/pdf` 與 `.pdf` 副檔名。
+  3. 上傳按鈕文字改為「上傳 Word / PDF」；歡迎文字與錯誤提示同步更新。
+  4. 後端 multer fileFilter 加入 `application/pdf` MIME 類型。
+  5. 後端 `aiController.writingAssist` 依 `file.mimetype` 分流：PDF 使用 `pdf-parse` 提取文字，Word 仍使用 `mammoth`。
+- **驗證方式**：在「產生文章」模式點擊「上傳 Word / PDF」，選擇 `.pdf` 檔案，確認檔名顯示於按鈕旁；點送出後 AI 以 PDF 內容產生 Markdown 文章。嘗試上傳其他格式（如 .txt）確認顯示格式錯誤提示。
+
+---
+
 ### [FEAT-002] 優化 AI 面板「新對話」按鈕位置與輸入框高度對齊
 - **狀態**：✅ 已完成（2026-05-20）
 - **根本原因**：

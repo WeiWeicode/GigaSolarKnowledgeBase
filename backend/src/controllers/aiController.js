@@ -1,4 +1,5 @@
 const mammoth   = require('mammoth');
+const pdfParse  = require('pdf-parse');
 const aiService = require('../services/aiService');
 
 function setSSEHeaders(res) {
@@ -43,12 +44,17 @@ async function writingAssist(req, res) {
 
   if (file) {
     try {
-      const result = await mammoth.extractRawText({ buffer: file.buffer });
-      textContent    = result.value;
+      if (file.mimetype === 'application/pdf') {
+        const result = await pdfParse(file.buffer);
+        textContent = result.text;
+      } else {
+        const result = await mammoth.extractRawText({ buffer: file.buffer });
+        textContent = result.value;
+      }
       sourceFilename = file.originalname;
     } catch (err) {
-      console.error('Word 解析失敗:', err.message);
-      return res.status(500).json({ success: false, message: 'Word 檔案解析失敗' });
+      console.error('檔案解析失敗:', err.message);
+      return res.status(500).json({ success: false, message: '檔案解析失敗，請確認檔案格式正確' });
     }
   }
 

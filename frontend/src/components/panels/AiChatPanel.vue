@@ -118,18 +118,18 @@
             <div v-if="mentionResults.length === 0" class="mention-empty">找不到相關文章</div>
           </div>
 
-          <!-- Word 上傳（generate 模式） -->
+          <!-- Word / PDF 上傳（generate 模式） -->
           <div v-if="currentMode === 'generate'" class="upload-area">
             <input
               ref="fileInputRef"
               type="file"
-              accept=".doc,.docx"
+              accept=".doc,.docx,.pdf"
               style="display:none"
               @change="onFileSelected"
             />
             <div class="upload-row">
               <el-button plain size="small" @click="fileInputRef.click()">
-                <el-icon><Upload /></el-icon> 上傳 Word
+                <el-icon><Upload /></el-icon> 上傳 Word / PDF
               </el-button>
               <span v-if="selectedFile" class="file-name" :title="selectedFile.name">
                 {{ selectedFile.name }}
@@ -289,7 +289,7 @@ watch(
 
 const welcomeText = computed(() => ({
   chat:     '請輸入問題或貼入文章內容，我將解析並提供關鍵摘要與相關關鍵字。',
-  generate: '請輸入提示詞或上傳 Word 檔案（.doc/.docx，最大 5 MB），我將為你產生 Markdown 文章。',
+  generate: '請輸入提示詞或上傳 Word / PDF 檔案（.doc/.docx/.pdf，最大 5 MB），我將為你產生 Markdown 文章。',
   correct:  '點擊送出，我將校正目前編輯中的文章內容。',
 }[currentMode.value]))
 
@@ -326,9 +326,10 @@ function onFileSelected(e) {
   const allowedMime = [
     'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/pdf',
   ]
-  if (!allowedMime.includes(file.type) && !/\.(doc|docx)$/i.test(file.name)) {
-    fileError.value = '僅接受 .doc 或 .docx 格式'
+  if (!allowedMime.includes(file.type) && !/\.(doc|docx|pdf)$/i.test(file.name)) {
+    fileError.value = '僅接受 .doc、.docx 或 .pdf 格式'
     if (fileInputRef.value) fileInputRef.value.value = ''
     return
   }
