@@ -20,15 +20,23 @@ async function login(req, res) {
   }
 
   try {
-    // 1. 呼叫 BPM 驗證
-    // const { authToken } = await bpmService.bpmLogin(account, password);
+    // 1. 呼叫 BPM 驗證（生產環境走真實 BPM；開發環境使用 account === password mock）
     let authToken;
-    if (account === password) {
-      const exp = Math.floor(Date.now() / 1000) + 86400; // 1天
-      const mockPayload = Buffer.from(JSON.stringify({ exp, account })).toString('base64');
-      authToken = `mockHeader.${mockPayload}.mockSignature`;
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    if (isProduction) {
+      // 生產環境：呼叫 BPM AD 登入
+      const bpmResult = await bpmService.bpmLogin(account, password);
+      authToken = bpmResult.authToken;
     } else {
-      throw new Error('帳號或密碼錯誤 (測試階段：需 account === password)');
+      // 開發環境：帳號 === 密碼 即視為驗證通過
+      if (account === password) {
+        const exp = Math.floor(Date.now() / 1000) + 86400; // 1天
+        const mockPayload = Buffer.from(JSON.stringify({ exp, account })).toString('base64');
+        authToken = `mockHeader.${mockPayload}.mockSignature`;
+      } else {
+        throw new Error('帳號或密碼錯誤 (開發環境：需 account === password)');
+      }
     }
 
     // 2. 解析 JWT exp → expires_at
