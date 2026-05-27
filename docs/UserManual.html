@@ -1,0 +1,1260 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GigaSolar 集團知識庫 – 系統操作使用手冊</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary-color: #0f766e; /* 典雅深綠色，象徵綠能 */
+      --primary-light: #f0fdfa;
+      --primary-hover: #0d9488;
+      --secondary-color: #3b82f6;
+      --text-main: #1f2937;
+      --text-muted: #6b7280;
+      --bg-main: #f8fafc;
+      --card-bg: #ffffff;
+      --border-color: #e2e8f0;
+      --badge-yellow: #fef3c7;
+      --badge-yellow-text: #b45309;
+      --badge-red: #fee2e2;
+      --badge-red-text: #991b1b;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      --border-radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      line-height: 1.7;
+    }
+
+    /* Layout structure */
+    .container {
+      display: flex;
+      max-width: 1440px;
+      margin: 0 auto;
+      min-height: 100vh;
+    }
+
+    /* Sidebar Index */
+    .sidebar {
+      width: 300px;
+      background-color: #0b1329; /* 深藍黑色底，搭配亮綠色高亮，極高階視覺 */
+      color: #f8fafc;
+      padding: 30px 24px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .sidebar-header {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+      padding-bottom: 20px;
+      text-align: center;
+    }
+
+    .sidebar-logo {
+      font-size: 32px;
+      margin-bottom: 8px;
+    }
+
+    .sidebar-title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: #2dd4bf; /* 青綠色高亮 */
+    }
+
+    .sidebar-subtitle {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+
+    .nav-menu {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .nav-item a {
+      color: #cbd5e1;
+      text-decoration: none;
+      font-size: 14px;
+      padding: 10px 14px;
+      border-radius: var(--border-radius);
+      display: block;
+      transition: all 0.2s ease;
+      border-left: 3px solid transparent;
+    }
+
+    .nav-item a:hover {
+      background-color: rgba(255, 255, 255, 0.05);
+      color: #fff;
+      border-left-color: #0d9488;
+    }
+
+    .nav-item.active a {
+      background-color: rgba(13, 148, 136, 0.15);
+      color: #2dd4bf;
+      border-left-color: #2dd4bf;
+      font-weight: 600;
+    }
+
+    /* Main Content */
+    .content-area {
+      flex: 1;
+      padding: 40px 60px;
+      max-width: calc(100% - 300px);
+      overflow-y: auto;
+    }
+
+    header.manual-header {
+      margin-bottom: 40px;
+      padding-bottom: 30px;
+      border-bottom: 1px solid var(--border-color);
+      position: relative;
+    }
+
+    header.manual-header h1 {
+      font-size: 32px;
+      color: var(--primary-color);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    header.manual-header p.intro {
+      color: var(--text-muted);
+      font-size: 15px;
+    }
+
+    /* Section styling */
+    section {
+      margin-bottom: 60px;
+      scroll-margin-top: 40px;
+    }
+
+    h2.section-title {
+      font-size: 22px;
+      color: #0f172a;
+      border-left: 5px solid var(--primary-color);
+      padding-left: 12px;
+      margin-bottom: 24px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    h3.subsection-title {
+      font-size: 16px;
+      color: #1e293b;
+      margin: 28px 0 14px 0;
+      font-weight: 600;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius);
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow-sm);
+      transition: box-shadow 0.3s ease, transform 0.3s ease;
+    }
+
+    .card:hover {
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+    }
+
+    p {
+      margin-bottom: 16px;
+      color: #334155;
+    }
+
+    /* Highlight badges */
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 4px;
+      text-transform: uppercase;
+      vertical-align: middle;
+    }
+
+    .badge-primary { background-color: var(--primary-light); color: var(--primary-color); }
+    .badge-success { background-color: #ecfdf5; color: #047857; }
+    .badge-warning { background-color: var(--badge-yellow); color: var(--badge-yellow-text); }
+    .badge-danger { background-color: var(--badge-red); color: var(--badge-red-text); }
+    .badge-info { background-color: #eff6ff; color: #1d4ed8; }
+
+    /* Alert block */
+    .alert-block {
+      padding: 16px 20px;
+      border-radius: var(--border-radius);
+      margin: 20px 0;
+      display: flex;
+      gap: 12px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .alert-info {
+      background-color: #eff6ff;
+      border-left: 4px solid #3b82f6;
+      color: #1e3a8a;
+    }
+
+    .alert-warning {
+      background-color: #fffbeb;
+      border-left: 4px solid #f59e0b;
+      color: #78350f;
+    }
+
+    .alert-danger {
+      background-color: #fef2f2;
+      border-left: 4px solid #ef4444;
+      color: #7f1d1d;
+    }
+
+    .alert-icon {
+      font-size: 20px;
+      flex-shrink: 0;
+      user-select: none;
+    }
+
+    /* Buttons table styling */
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      margin: 16px 0;
+      border-radius: var(--border-radius);
+      border: 1px solid var(--border-color);
+      box-shadow: var(--shadow-sm);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 13px;
+    }
+
+    th {
+      background-color: #f1f5f9;
+      color: #334155;
+      font-weight: 600;
+      padding: 12px 16px;
+      border-bottom: 2px solid var(--border-color);
+    }
+
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+      color: #475569;
+      vertical-align: middle;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background-color: #f8fafc;
+    }
+
+    .btn-demo {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      border-radius: 6px;
+      background-color: #fff;
+      border: 1px solid #cbd5e1;
+      color: #334155;
+      cursor: default;
+      box-shadow: var(--shadow-sm);
+      white-space: nowrap;
+    }
+
+    .btn-demo-primary {
+      background-color: var(--primary-color);
+      border-color: var(--primary-color);
+      color: #fff;
+    }
+
+    .btn-demo-success {
+      background-color: #10b981;
+      border-color: #10b981;
+      color: #fff;
+    }
+
+    .btn-demo-warning {
+      background-color: #f59e0b;
+      border-color: #f59e0b;
+      color: #fff;
+    }
+
+    .btn-demo-danger {
+      background-color: #ef4444;
+      border-color: #ef4444;
+      color: #fff;
+    }
+
+    .btn-demo-text {
+      border: none;
+      background: transparent;
+      box-shadow: none;
+      color: var(--primary-color);
+      padding: 2px 4px;
+    }
+
+    .btn-demo-circle {
+      border-radius: 50%;
+      width: 26px;
+      height: 26px;
+      padding: 0;
+      justify-content: center;
+      align-items: center;
+    }
+
+    /* Directory Tree Mockup */
+    .tree-mockup {
+      background-color: #f8fafc;
+      border: 1px dashed var(--border-color);
+      border-radius: var(--border-radius);
+      padding: 16px;
+      font-family: monospace;
+      font-size: 13px;
+      color: #334155;
+    }
+
+    .tree-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+    }
+
+    .indent-1 { padding-left: 24px; }
+    .indent-2 { padding-left: 48px; }
+
+    /* Footer */
+    footer.manual-footer {
+      text-align: center;
+      padding: 40px 0;
+      border-top: 1px solid var(--border-color);
+      color: var(--text-muted);
+      font-size: 12px;
+      margin-top: 80px;
+    }
+
+    /* Back to top smooth */
+    html {
+      scroll-behavior: smooth;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- Sidebar Index -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">📚</div>
+        <div class="sidebar-title">GigaSolar 知識庫</div>
+        <div class="sidebar-subtitle">系統操作與功能指引手冊</div>
+      </div>
+      <ul class="nav-menu">
+        <li class="nav-item active"><a href="#intro">一、 手冊概述與登入指引</a></li>
+        <li class="nav-item"><a href="#layout">二、 主畫面佈局與導覽</a></li>
+        <li class="nav-item"><a href="#home">三、 首頁功能說明</a></li>
+        <li class="nav-item"><a href="#directory">四、 目錄樹架構與管理</a></li>
+        <li class="nav-item"><a href="#article">五、 知識庫文章管理</a></li>
+        <li class="nav-item"><a href="#attachment">六、 知識庫附件管理</a></li>
+        <li class="nav-item"><a href="#settings">七、 個人與主管偏好設定</a></li>
+        <li class="nav-item"><a href="#admin">八、 管理員系統後台設定</a></li>
+        <li class="nav-item"><a href="#ai-status">九、 AI 智慧輔助功能說明</a></li>
+      </ul>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="content-area">
+      <header class="manual-header">
+        <h1>集團知識庫系統操作使用手冊</h1>
+        <p class="intro">本手冊旨在引導集團內所有同仁、主管與管理員，熟悉集團知識庫（GigaSolar Knowledge Base）的各項操作流程。系統提供跨公司及跨部門的知識檢索、文章共筆、附件版本控管與精細的權限管理機制。</p>
+      </header>
+
+      <!-- 一、 手冊概述與登入指引 -->
+      <section id="intro">
+        <h2 class="section-title">一、 手冊概述與登入指引</h2>
+        <div class="card">
+          <p>「集團知識庫」是一套專為 GigaSolar 集團設計的內部文件、知識與技術手冊管理系統，為同仁在跨部門、跨專案協作中提供堅實的支援。系統具備細緻的人員權限配置與多公司/部門層次切換功能。</p>
+          
+          <h3 class="subsection-title">1.1 系統認證與登入流程</h3>
+          <p>系統已與集團的 <strong>BPM（業務流程管理系統）</strong> 帳號進行深度整合。為了保障資訊安全，系統本身<strong>不另行儲存或維護使用者的密碼</strong>。請使用您既有的 開機 帳號進行驗證登入。</p>
+          
+          <div class="alert-block alert-info">
+            <span class="alert-icon">ℹ️</span>
+            <div>
+              <strong>認證儲存規範：</strong>登入取得的憑證（Token）將安全地儲存於瀏覽器的 <code>sessionStorage</code> 中。當您<strong>關閉該瀏覽器分頁（Tab）</strong>或<strong>另開新分頁</strong>時，該 Token 即失效，系統會自動將您導回登入頁，此為保障商業機密的安全防護設計。
+            </div>
+          </div>
+
+          <h3 class="subsection-title">1.2 登入頁按鈕與欄位說明</h3>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25%">介面元素</th>
+                  <th style="width: 25%">操作類型</th>
+                  <th style="width: 50%">功能與運作說明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>員工工號</strong> 欄位</td>
+                  <td>文字輸入框 (User)</td>
+                  <td>請輸入您的集團員工工號（例如：S112009）。此欄位為必填。</td>
+                </tr>
+                <tr>
+                  <td><strong>密碼</strong> 欄位</td>
+                  <td>密碼輸入框 (Lock)</td>
+                  <td>請輸入您的 開機 登入密碼。本欄位支援 <span class="badge badge-info">顯示/隱藏密碼</span> 切換。此欄位為必填。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo btn-demo-primary">登入</span></td>
+                  <td>主要動作按鈕</td>
+                  <td>點擊或按鍵盤 Enter 後，系統會向後端傳送認證請求。登入成功後將導向知識庫首頁；失敗時會彈出「登入失敗，請確認工號與密碼」的提示。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 二、 主畫面佈局與導覽 -->
+      <section id="layout">
+        <h2 class="section-title">二、 主畫面佈局與導覽</h2>
+        <div class="card">
+          <p>登入系統後，主畫面分為四個核心視覺區域：<strong>頂部導覽列 (TheHeader)</strong>、<strong>最左側主選單 (TheSidebar)</strong>、<strong>左側樹狀目錄面板 (DirectoryTree)</strong> 以及 <strong>中央主要內容展示區 (kb-main)</strong>。</p>
+
+          <h3 class="subsection-title">2.1 頂部導覽列按鈕與欄位說明</h3>
+          <p>頂部導覽列負責管理目前使用者所檢視的「組織範圍」與「個人通知狀態」。</p>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25%">介面按鈕 / 元素</th>
+                  <th style="width: 25%">操作類型</th>
+                  <th style="width: 50%">功能與運作說明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>選擇公司</strong> 下拉選單</td>
+                  <td>選擇框 (el-select)</td>
+                  <td>點擊可切換集團旗下的不同公司組織。切換後，系統會同步連動更新部門選單以及目錄樹內容。</td>
+                </tr>
+                <tr>
+                  <td><strong>選擇部門</strong> 下拉選單</td>
+                  <td>選擇框 (el-select)</td>
+                  <td>
+                    切換目前所屬公司的部門。選單中預設顯示與目前使用者<strong>工號部門前 3 碼相同的所有關聯部門</strong>。<br>
+                    若您擁有其他部門的主管跨部門明確授權，該授權部門也會以聯集方式顯示於此選單中。
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo btn-demo-circle">🔔</span> <strong>通知鈴鐺</strong></td>
+                  <td>下拉預覽按鈕 (el-badge)</td>
+                  <td>
+                    當有人在文章或附件的評論中<strong>使用 @提及 標記您</strong>時，此鈴鐺會顯示未讀紅點與計數。<br>
+                    點擊會向下展開快速預覽面板，顯示最近的 5 筆未讀通知。
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo-text">查看全部</span> (通知面板內)</td>
+                  <td>超連結按鈕</td>
+                  <td>點擊快速跳轉至首頁的「通知中心」詳細閱讀與管理未讀通知。</td>
+                </tr>
+                <tr>
+                  <td><strong>使用者名稱與角色標籤</strong></td>
+                  <td>狀態展示</td>
+                  <td>
+                    顯示目前登入人員的姓名，並依據其角色高亮顯示身分標籤：
+                    <span class="badge badge-danger">管理員</span> (ADMIN)、
+                    <span class="badge badge-warning">主管</span> (MANAGER)、
+                    <span class="badge badge-success">同仁</span> (MEMBER)、
+                    <span class="badge badge-info">訪客</span> (GUEST)。
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo-text">登出</span></td>
+                  <td>動作按鈕</td>
+                  <td>點擊將安全清除 <code>sessionStorage</code> 中的 Token 憑證，並立刻重新導向回登入介面。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 class="subsection-title">2.2 最左側主選單按鈕與欄位說明</h3>
+          <p>主選單提供全域的檢視模式切換與頁面跳轉連結。</p>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25%">介面按鈕 / 元素</th>
+                  <th style="width: 25%">操作類型</th>
+                  <th style="width: 50%">功能與運作說明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>文件範圍</strong> 下拉選單</td>
+                  <td>選擇框 (scope-select)</td>
+                  <td>
+                    切換當前知識庫瀏覽的範疇：<br>
+                    1. <span class="badge badge-primary">公開文件</span>：僅能看見設定為全集團公開的知識。在此模式下，左側選單將只保留「首頁」選項，且目錄樹只渲染標示公開之文件。<br>
+                    2. <span class="badge badge-info">部門文件</span>：可完整檢視部門私有及公開之內容，並開啟建立與上傳入口。
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo">🏠 首頁</span></td>
+                  <td>導覽按鈕</td>
+                  <td>點擊跳轉至首頁（大廳），包含搜尋區塊與通知中心。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo">📝 建立文章</span></td>
+                  <td>導覽按鈕</td>
+                  <td>點擊開啟新增文章編輯頁（僅在<strong>部門文件模式</strong>下顯示）。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo">📤 上傳文件</span></td>
+                  <td>導覽按鈕</td>
+                  <td>點擊開啟新建附件上傳頁（僅在<strong>部門文件模式</strong>下顯示）。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo">⚙️ 設定</span></td>
+                  <td>導覽按鈕</td>
+                  <td>點擊進入「個人設定與偏好設定」面板，主管可在本頁面管理標籤與進行跨部門授權。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo">🛠️ 管理員設定</span></td>
+                  <td>導覽按鈕</td>
+                  <td>僅限 <span class="badge badge-danger">管理員 (ADMIN)</span> 角色可見。點擊進入全系統後台設定面板。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 三、 首頁功能說明 -->
+      <section id="home">
+        <h2 class="section-title">三、 首頁功能說明</h2>
+        <div class="card">
+          <p>首頁是同仁每天的工作大廳，提供了全系統的<strong>快速檢索引擎</strong>與<strong>個人通知中心</strong>。</p>
+
+          <h3 class="subsection-title">3.1 知識檢索與標籤篩選</h3>
+          <p>檢索引擎採用即時模糊搜尋技術，可以同時對知識庫內的所有「文章標題/內文」與「附件檔名/說明」進行全方位檢索。</p>
+          
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25%">介面按鈕 / 元素</th>
+                  <th style="width: 25%">操作類型</th>
+                  <th style="width: 50%">功能與運作說明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>搜尋輸入框</strong></td>
+                  <td>關鍵字輸入 (Search)</td>
+                  <td>輸入欲查詢之關鍵字。系統會在您停止輸入後的 300 毫秒後，自動觸發即時搜尋。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo">重置搜尋</span></td>
+                  <td>動作按鈕</td>
+                  <td>點擊立即清空搜尋輸入框中的關鍵字，並取消所有勾選的篩選標籤，恢復首頁預設展示狀態。</td>
+                </tr>
+                <tr>
+                  <td><strong>標籤篩選</strong> 區域 (Tags)</td>
+                  <td>多選按鈕 (Check Tag)</td>
+                  <td>
+                    展示目前範圍下的熱門或常用標籤。點擊標籤進行「與 (AND)」多重過濾。<br>
+                    在<strong>公開模式下點選標籤，會自動累加該標籤的熱度點擊數</strong>。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>搜尋結果列表項目</strong></td>
+                  <td>導覽連結卡片</td>
+                  <td>
+                    搜尋結果會依最後更新時間排序，並以標籤明確區分：<br>
+                    - <span class="badge badge-primary">文章</span>：點擊即導向文章詳細閱讀頁。<br>
+                    - <span class="badge badge-success">附件</span>：點擊即導向附件詳細與下載頁。<br>
+                    ※ 運作機制：若搜尋結果屬於其他授權部門，系統會自動在背景切換目錄樹至該部門，以防連結失效。
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 class="subsection-title">3.2 通知中心管理</h3>
+          <p>通知中心為使用者集中處理留言提及 (@mention) 的地方，確保工作指令與問題回饋不漏接。</p>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25%">介面按鈕 / 元素</th>
+                  <th style="width: 25%">操作類型</th>
+                  <th style="width: 50%">功能與運作說明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>未讀通知卡片項目</strong></td>
+                  <td>導覽卡片</td>
+                  <td>顯示提及您的文章名稱、提及者名稱、留言內容預覽以及時間。點擊卡片將自動跳轉至該文章的對應留言位置。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo btn-demo-danger">已查看</span> (通知卡片內)</td>
+                  <td>動作按鈕</td>
+                  <td>點擊將該通知標記為「已讀」，此通知會隨即移入右側「已讀通知」列表中。</td>
+                </tr>
+                <tr>
+                  <td><strong>已讀通知列表</strong></td>
+                  <td>歷史展示區</td>
+                  <td>展示近 30 天內已被讀取的歷史提及通知，作為工作紀錄備查。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 四、 目錄樹架構與管理 -->
+      <section id="directory">
+        <h2 class="section-title">四、 目錄樹架構與管理</h2>
+        <div class="card">
+          <p>目錄樹 (DirectoryTree) 是系統管理所有文件分類的靈魂，左側面板以階層結構呈現：<strong>公司 ➔ 部門 ➔ 目錄 ➔ 文章/附件</strong>。</p>
+          
+          <h3 class="subsection-title">4.1 目錄樹權限防護</h3>
+          <p>系統對目錄樹上的每一個檔案項目都設有嚴密的安全防護。如果某個檔案項目受限於職級或特定部門：</p>
+          <ul>
+            <li>無存取權限的檔案在目錄樹中會呈現<strong>灰色文字</strong>，且右方會標示 <span class="badge badge-danger">🔒 無存取權限</span> 圖示。</li>
+            <li>此時點擊該檔案，系統會發出警告「<strong>目前無存取該文件的權限</strong>」並拒絕導航，防止內部資料外洩。</li>
+          </ul>
+
+          <h3 class="subsection-title">4.2 主管專屬：目錄樹管理與排序操作</h3>
+          <p>僅有 <span class="badge badge-warning">主管 (MANAGER)</span> 與 <span class="badge badge-danger">管理員 (ADMIN)</span> 可以對目錄進行結構與順序的調整。</p>
+          
+          <div class="alert-block alert-warning">
+            <span class="alert-icon">⚠️</span>
+            <div>
+              <strong>目錄拖曳排序規則：</strong>系統目錄樹支援<strong>滑鼠拖曳重排（Drag and Drop）</strong>。您只能將目錄拖曳至「其他目錄」或「部門節點」內部作為子目錄，或是同層目錄之間前後排序。系統嚴格限制並禁止將目錄拖曳至「公司」、「文章」、「附件」或「垃圾桶」周圍。
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25%">介面按鈕 / 元素</th>
+                  <th style="width: 25%">操作類型</th>
+                  <th style="width: 50%">功能與運作說明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="btn-demo btn-demo-circle">🔄</span> (目錄樹頂部)</td>
+                  <td>重新整理按鈕</td>
+                  <td>點擊會向伺服器重新獲取最新的目錄樹結構與檔案狀態，同步最新協作成果。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo btn-demo-circle">➕</span> (目錄樹頂部)</td>
+                  <td>主管專用按鈕</td>
+                  <td>僅限主管顯示。點擊在當前部門的最上層建立一個全新的「一級主目錄」。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo btn-demo-circle">⋯</span> (目錄節點移入時)</td>
+                  <td>下拉功能按鈕 (More)</td>
+                  <td>僅限主管顯示。滑鼠移入目錄節點時浮現，點擊會展開管理子選單：</td>
+                </tr>
+                <tr>
+                  <td>↳ <span class="btn-demo-text">➕ 新增子目錄</span></td>
+                  <td>選單動作</td>
+                  <td>在此目錄下方新建下一層的子目錄。</td>
+                </tr>
+                <tr>
+                  <td>↳ <span class="btn-demo-text">📝 重新命名</span></td>
+                  <td>選單動作</td>
+                  <td>彈出文字輸入框，直接修改該目錄的名稱。</td>
+                </tr>
+                <tr>
+                  <td>↳ <span class="btn-demo-text" style="color:red;">🗑️ 移除目錄</span></td>
+                  <td>選單動作</td>
+                  <td>
+                    刪除該分類目錄。<br>
+                    <strong>安全機制：</strong>若該目錄中仍然含有檔案或子目錄，系統會警告「目錄內還有檔案或子目錄，無法直接移除！」，必須先移空內容方可刪除。
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 五、 知識庫文章管理 -->
+      <section id="article">
+        <h2 class="section-title">五、 知識庫文章管理</h2>
+        <div class="card">
+          <p>文章是系統核心的知識載體，提供多人線上即時協作防鎖機制與高階 Markdown 編輯器。</p>
+
+          <h3 class="subsection-title">5.1 閱讀/瀏覽模式 (View Mode)</h3>
+          <p>提供乾淨舒適的排版，同仁可在下方的<strong>屬性描述列表</strong>中查看該文章的標籤、關聯之附件及設定權限。</p>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25%">介面按鈕 / 元素</th>
+                  <th style="width: 25%">操作類型</th>
+                  <th style="width: 50%">功能與運作說明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="btn-demo">評論</span> (底端/右上方)</td>
+                  <td>抽屜面板切換按鈕</td>
+                  <td>
+                    點擊從右側拉出「文章評論抽屜」。同仁可在此留言討論。<br>
+                    <strong>@提及功能：</strong>在留言框中輸入 <code>@</code> 會自動彈出目前部門的同仁名單（支援中文與拼音搜尋），點選指定同仁會發送 in-app 提及通知。
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo">修改紀錄 v[數字]</span></td>
+                  <td>抽屜面板切換按鈕</td>
+                  <td>
+                    點擊從右側展開「版本歷史與紀錄面板」。展示文章從建立至今的所有修改記錄。<br>
+                    <strong>版本追溯：</strong>點擊歷史版本中的項目，可回溯閱讀舊版本的文章內容。
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo btn-demo-primary">返回最新版本</span></td>
+                  <td>動作按鈕</td>
+                  <td>僅在閱讀歷史舊版本文章時出現，點擊快速切換回最新的文章版本。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo btn-demo-primary">編輯</span></td>
+                  <td>模式切換按鈕</td>
+                  <td>
+                    若您擁有本文章的修改權限，點擊會使文章進入<strong>編輯模式</strong>並載入 Vditor 編輯器。<br>
+                    <strong>多人編輯防護：</strong>若此時有其他同仁正在編輯，系統會顯示 <span class="badge badge-warning">🔄 [姓名] 編輯中</span> 狀態，並鎖定按鈕防止內容覆蓋衝突。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>描述列表中的附件連結</strong></td>
+                  <td>超連結跳轉</td>
+                  <td>若文章已關聯附件，點擊可直接導航跳轉至對應的附件管理頁面。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 class="subsection-title">5.2 編輯與建立模式 (Edit / Create Mode)</h3>
+          <p>在此模式下，您可以修改文章的基本屬性、安全權限，並透過 Markdown 編輯器進行內容撰寫。</p>
+          
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25%">介面按鈕 / 元素</th>
+                  <th style="width: 25%">操作類型</th>
+                  <th style="width: 50%">功能與運作說明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="btn-demo btn-demo-circle">⬅️</span> <strong>退回查看</strong></td>
+                  <td>模式切換按鈕</td>
+                  <td>點擊捨棄當前未儲存的變更，退回瀏覽模式。</td>
+                </tr>
+                <tr>
+                  <td><strong>文章標題</strong> 輸入框</td>
+                  <td>文字輸入框</td>
+                  <td>輸入或修改文章標題。此標題將做為目錄樹上顯示之名稱。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo">選擇目錄</span></td>
+                  <td>彈出 Dialog 選取框</td>
+                  <td>
+                    文章在目錄樹中<strong>支援多重分類歸屬</strong>。點擊開啟 Dialog 勾選本文章存放的目錄節點（可多選）。
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo">關聯文件</span></td>
+                  <td>彈出 Dialog 選取表單</td>
+                  <td>
+                    點擊開啟 Dialog，在清單中勾選欲與本文章產生強烈關聯之附件檔案。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>標籤</strong> 下拉選單</td>
+                  <td>多選與建立選單</td>
+                  <td>
+                    可選取部門標籤。本選單支援<strong>直接輸入文字後按 Enter</strong> 以快速建立並綁定全新標籤。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>是否公開</strong> 單選鈕</td>
+                  <td>單選組 (Radio)</td>
+                  <td>
+                    - <strong>全集團公開：</strong>任何跨部門、跨公司的同仁在切為「公開文件」時皆可搜尋與閱讀。<br>
+                    - <strong>部門私有：</strong>僅限本部門成員或指定人員方可閱讀。
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo">指定可編輯同仁</span></td>
+                  <td>彈出 Dialog 勾選框</td>
+                  <td>
+                    預設情況下，文章僅能由「建立者」、「主管」與「管理員」修改。點擊可授權勾選部門內其他同仁共同編輯此文章。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>查看權限 – 指定人員</strong></td>
+                  <td>下拉多選選單</td>
+                  <td>僅在「部門私有」時生效。預設空白代表部門全員可看，若選取了特定同仁，則該文章將轉為<strong>極機密限制級別</strong>，僅名單內同仁可閱讀。</td>
+                </tr>
+                <tr>
+                  <td><strong>查看職級門檻</strong> 下拉選單</td>
+                  <td>下拉單選選單</td>
+                  <td>
+                    設定查看本文章所需的最低級職：<br>
+                    - <strong>一般人員（全員可見）</strong>：級職 threshold 設為 10。<br>
+                    - <strong>課級以上</strong>：級職 threshold 設為 7。<br>
+                    - <strong>理級以上</strong>：級職 threshold 設為 6。<br>
+                    - <strong>處級以上</strong>：級職 threshold 設為 4。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>文件上架</strong> 單選鈕</td>
+                  <td>單選組 (Radio)</td>
+                  <td>
+                    - <strong>上架：</strong>正常於系統與目錄樹中展示。<br>
+                    - <strong>下架：</strong>點選下架會<strong>自動清空原目錄歸屬，並將文章移入「垃圾桶節點」中</strong>，停止前台檢索與呈現。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>修改說明</strong> 輸入框</td>
+                  <td>多行文字輸入框</td>
+                  <td>在儲存前，建議簡述本次的修改重點（例如：修正第三章流程圖）。儲存後此內容將永久寫入版本歷史。</td>
+                </tr>
+                <tr>
+                  <td><strong>Vditor Markdown 編輯器</strong></td>
+                  <td>富文字/Markdown 區</td>
+                  <td>
+                    支援即時預覽（IR 模式）、大綱清單、代碼高亮。<br>
+                    <strong>圖片拖曳 Hook：</strong>支援直接拖曳圖片或複製截圖貼上至編輯器中，系統會自動呼叫後端 API 完成上傳並生成網頁圖片代碼。
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo btn-demo-success">儲存</span></td>
+                  <td>主要儲存動作按鈕</td>
+                  <td>點擊進行必填欄位檢查，儲存變更，建立全新版本，並刷新側邊目錄樹，隨後退回瀏覽模式。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo btn-demo-warning">建立</span> (僅新建文章時)</td>
+                  <td>主要建立動作按鈕</td>
+                  <td>點擊將新文章儲存至伺服器，並導航至新建文章之詳細閱讀頁面。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 六、 知識庫附件管理 -->
+      <section id="attachment">
+        <h2 class="section-title">六、 知識庫附件管理</h2>
+        <div class="card">
+          <p>附件管理模組專門用來存放非 Markdown 格式的實體檔案（如 PDF 操作手冊、Excel 數據表或 Word 法規文件），並對檔案提供嚴格的版本回溯控管。</p>
+
+          <h3 class="subsection-title">6.1 閱讀與下載模式 (View & Download)</h3>
+          <p>與文章界面類似，底端設有專屬的「附件說明」展示區，以及最重要的「檔案清單與下載控制」。</p>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25%">介面按鈕 / 元素</th>
+                  <th style="width: 25%">操作類型</th>
+                  <th style="width: 50%">功能與運作說明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>關聯文章連結</strong> (屬性表內)</td>
+                  <td>超連結跳轉</td>
+                  <td>如果此附件有關聯文章，點擊可直接跳轉至文章詳細閱讀頁面。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo btn-demo-primary">下載</span> (檔案列表右側)</td>
+                  <td>實體檔案下載動作</td>
+                  <td>
+                    點擊觸發檔案下載流程。<br>
+                    <strong>安全驗證機制：</strong>系統在點擊下載時，會自動在背景請求的 Header 中附加使用者的 JWT Token 進行存取權限審查，核准後才會開始下載，並保證下載的檔案名稱與當初上傳之原始檔名完全一致。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>檔案版本與大小標籤</strong></td>
+                  <td>狀態展示</td>
+                  <td>在檔案名稱右側，會明確顯示該實體檔案目前的版本（如 <code>v2</code>）與檔案大小（自動轉換為 KB/MB），幫助同仁核對資訊。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 class="subsection-title">6.2 上傳、修改與建立模式 (Upload & Edit)</h3>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25%">介面按鈕 / 元素</th>
+                  <th style="width: 25%">操作類型</th>
+                  <th style="width: 50%">功能與運作說明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="btn-demo">選擇關聯文章</span></td>
+                  <td>彈出 Dialog 選取表單</td>
+                  <td>點擊開啟 Dialog，在清單中勾選與此附件高度關聯的知識庫文章。</td>
+                </tr>
+                <tr>
+                  <td><strong>附件說明輸入框</strong></td>
+                  <td>多行文字輸入</td>
+                  <td>提供撰寫附件的詳細用途、填寫說明、更新頻率等描述，協助同仁快速理解。</td>
+                </tr>
+                <tr>
+                  <td><strong>檔案拖曳上傳區</strong></td>
+                  <td>檔案上傳控制 (el-upload)</td>
+                  <td>
+                    可以將您的檔案拖放至此虛線框內，或是點擊框內任何地方開啟檔案選擇視窗。<br>
+                    <strong>系統限制：</strong>支援 <code>.doc / .docx / .xls / .xlsx / .pdf / .jpg / .png / .txt</code>，單一檔案上限為 <strong>5MB</strong>。
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo btn-demo-warning">建立</span> (上傳新文件頁面)</td>
+                  <td>主要建立動作按鈕</td>
+                  <td>點擊將完成檔案的傳輸上傳，並建立該附件卡片，隨後跳轉至附件瀏覽模式。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 七、 個人與主管偏好設定 -->
+      <section id="settings">
+        <h2 class="section-title">七、 個人與主管偏好設定</h2>
+        <div class="card">
+          <p>個人設定頁（SettingsView）為同仁提供系統偏好的調整入口。主管（MANAGER）在此頁面中將會額外看見兩個高階管理頁籤：<strong>標籤管理</strong>與<strong>跨部門管理</strong>。</p>
+
+          <h3 class="subsection-title">7.1 一般同仁功能設定</h3>
+          <ul>
+            <li><strong>個人資訊頁籤 (Profile)</strong>：展示同仁姓名、工號、職稱、部門、Email及直屬主管等。這些資料同步自 BPM 系統，在此呈現唯讀。</li>
+            <li><strong>通知設定頁籤 (Notification)</strong>：包含 <span class="badge badge-info">@提及 in-app 通知開關</span>，可自行決定當有人 @提及您時，是否要在首頁顯示未讀通知卡片。</li>
+            <li><strong>預設顯示頁籤 (Defaults)</strong>：展示登入後的預設公司與部門（唯讀）。</li>
+          </ul>
+
+          <h3 class="subsection-title">7.2 主管專屬一：標籤管理系統</h3>
+          <p>主管可以自行為所屬部門設計專屬的分類標籤，控制其排列順序與是否對全集團公開。</p>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25%">介面按鈕 / 元素</th>
+                  <th style="width: 25%">操作類型</th>
+                  <th style="width: 50%">功能與運作說明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>新增標籤 – 屬性設定</strong></td>
+                  <td>多欄位表單列</td>
+                  <td>
+                    設定新建標籤的規格：<br>
+                    - <strong>標籤名稱：</strong>必填文字。<br>
+                    - <strong>所屬部門：</strong>可多選，綁定標籤到指定部門。若留空則代表不在部門模式下出現。<br>
+                    - <strong>自訂順序：</strong>數字調整框，決定該標籤在首頁篩選區的排列權重。<br>
+                    - <strong>公開標籤開關：</strong>若開啟，則在「公開文件」模式下也能看到此標籤。
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo btn-demo-primary">新增</span></td>
+                  <td>動作按鈕</td>
+                  <td>點擊將上述設定送出，即刻建立新標籤並重刷下方列表。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo-text">編輯</span> (標籤列表中)</td>
+                  <td>行內控制按鈕</td>
+                  <td>點擊使該行標籤欄位轉為可輸入狀態，可直接修改名稱、所屬部門、順序與公開開關。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo-text">儲存</span> (標籤編輯狀態)</td>
+                  <td>行內主要動作</td>
+                  <td>儲存標籤屬性修改，寫入資料庫並重新載入列表。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo-text">取消</span> (標籤編輯狀態)</td>
+                  <td>行內次要動作</td>
+                  <td>捨棄本次標籤編輯，恢復原狀。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo-text" style="color:red;">刪除</span> (標籤列表中)</td>
+                  <td>行內危險動作</td>
+                  <td>彈出二次確認，同意後將全系統刪除該標籤（文章中原已勾選的標籤關聯也會一併自動解除）。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 class="subsection-title">7.3 主管專屬二：跨部門管理（權限指派）</h3>
+          <p>為了支援集團內部的跨部門合作，主管可以<strong>手動對所屬同仁進行跨部門瀏覽授權</strong>。</p>
+          <div class="alert-block alert-info">
+            <span class="alert-icon">💡</span>
+            <div>
+              <strong>授權運作與前三碼機制：</strong><br>
+              主管在指派權限時，為了安全合規，目標部門下拉選單中<strong>僅會顯示與該主管部門代碼前三碼相同的所有子公司部門</strong>（代表主管有權管轄或對接的部門範疇）。<br>
+              完成授權後，被授權同仁的頂部「部門選擇」選單中，會自動多出該部門的選項，同仁切換後即可在左側目錄樹中檢閱該部門下的所有私有文件。
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25%">介面按鈕 / 元素</th>
+                  <th style="width: 25%">操作類型</th>
+                  <th style="width: 50%">功能與運作說明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>被授權同仁</strong> 下拉選單</td>
+                  <td>人員多選搜尋框</td>
+                  <td>選擇您部門中欲賦予跨部門權限的同仁。</td>
+                </tr>
+                <tr>
+                  <td><strong>目標公司</strong> 下拉選單</td>
+                  <td>單選框</td>
+                  <td>選擇該部門所屬之集團子公司。</td>
+                </tr>
+                <tr>
+                  <td><strong>目標部門</strong> 下拉選單</td>
+                  <td>關鍵字篩選單選框</td>
+                  <td>選擇欲授權同仁存取的目標部門（支援輸入中文或部門代號即時篩選）。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo btn-demo-primary">新增授權</span></td>
+                  <td>主要動作按鈕</td>
+                  <td>點擊寫入跨部門授權記錄，立即生效。被授權人下次重新整理首頁時即可切換該部門。</td>
+                </tr>
+                <tr>
+                  <td><span class="btn-demo-text" style="color:red;">刪除</span> (授權記錄表)</td>
+                  <td>動作按鈕</td>
+                  <td>點擊彈出確認框。確認刪除後將<strong>即刻收回</strong>該同仁跨部門檢閱此部門的存取權限。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 八、 管理員系統後台設定 -->
+      <section id="admin">
+        <h2 class="section-title">八、 管理員系統後台設定</h2>
+        <div class="card">
+          <p>僅限系統內具備 <span class="badge badge-danger">管理員 (ADMIN)</span> 權限之帳號可進入此頁籤。此處提供對整個系統後台各項全域參數的管理介面。</p>
+          
+          <div class="alert-block alert-warning">
+            <span class="alert-icon">⚠️</span>
+            <div>
+              <strong>功能建置中提醒：</strong>部分後台功能因配合後端模組重構（如 B-01 user_roles 機制），目前於前端以警告橫幅標示「建置中，尚未串接後端」，管理員操作時請特別留意。
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 25%">後台子頁籤</th>
+                  <th style="width: 25%">介面元素與按鈕</th>
+                  <th style="width: 50%">功能與運作狀態說明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>公司管理</strong> (Company)</td>
+                  <td>唯讀列表 (el-table)</td>
+                  <td>展示目前系統中從 BPM 同步過來的旗下所有子公司名稱與其組織 OID。</td>
+                </tr>
+                <tr>
+                  <td><strong>使用者管理</strong> (Users)</td>
+                  <td><span class="btn-demo">升級</span> 與 <span class="btn-demo btn-demo-danger">降級</span> 按鈕</td>
+                  <td>
+                    <span class="badge badge-warning">建置中</span> 預留同仁的角色等級變更入口。<br>
+                    目前後端 <code>user_roles</code> 覆寫機制（B-01）尚在建置中，點擊時會彈出提示功能串接中。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>垃圾桶管理</strong> (Trash)</td>
+                  <td><span class="btn-demo btn-demo-danger">永久刪除</span> 按鈕</td>
+                  <td>
+                    <span class="badge badge-warning">建置中</span> 提供對所有已下架文章與附件的終極清理功能。<br>
+                    目前尚未串接後端 API，點擊會彈出提示功能建置中。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>全域標籤管理</strong> (Tags)</td>
+                  <td>
+                    - 標籤上的 <span class="badge badge-danger">x</span> 刪除鍵<br>
+                    - <span class="btn-demo btn-demo-primary">新增標籤</span> 按鈕
+                  </td>
+                  <td>
+                    <span class="badge badge-success">已啟用</span> 提供管理員對系統「全域標籤」的增刪管理。<br>
+                    點擊新增標籤會彈出 Dialog，輸入標籤名稱後點擊「確認新增」即可全系統生效。點擊 x 將會刪除該標籤。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>系統日誌</strong> (Logs)</td>
+                  <td>時間軸展示 (el-timeline)</td>
+                  <td><span class="badge badge-warning">建置中</span> 規劃紀錄所有關鍵的操作軌跡。目前尚未串接後端。</td>
+                </tr>
+                <tr>
+                  <td><strong>AI 設定</strong> (AI)</td>
+                  <td>
+                    - <strong>Endpoint / 預設模型</strong> 輸入框<br>
+                    - <span class="btn-demo btn-demo-primary">儲存 AI 設定</span> 按鈕
+                  </td>
+                  <td>
+                    <span class="badge badge-danger">尚未啟用</span> 本區用於設定全域 AI 串接服務之參數（例如：Ollama 位址）。<br>
+                    <strong>目前此項 AI 設定功能尚未啟用（建置中）</strong>，點擊儲存按鈕將提示尚未串接後端。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>檔案儲存</strong> (Storage)</td>
+                  <td>使用率圖表 / 狀態</td>
+                  <td><span class="badge badge-warning">建置中</span> 用於監視 Docker Volume (kb_uploads) 的空間。目前尚未串接後端。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 九、 AI 智慧輔助功能說明 -->
+      <section id="ai-status">
+        <h2 class="section-title">九、 AI 智慧輔助功能說明</h2>
+        <div class="card">
+          <p>為了提升集團同仁的文件撰寫效率與知識檢索體驗，系統在設計時已規劃了豐富的 AI 智慧模組：</p>
+          
+          <div class="alert-block alert-danger">
+            <span class="alert-icon">🛑</span>
+            <div>
+              <strong>重要公告：AI 智慧輔助功能「尚未啟用」</strong><br>
+              請所有同仁與主管注意，目前系統中的所有 <strong>AI 智慧輔助功能（包括但不限於首頁 AI 問答面版、文章編輯頁的 AI 輔助產生文章/校正文章、AI 全域關鍵字自動標籤等）目前均標示為「尚未啟用 / 建置中」</strong>。相關後台 Ollama 引擎與後端 AI API 端點正在積極進行系統對接與設備採購評估中。
+            </div>
+          </div>
+
+          <h3 class="subsection-title">未來的 AI 模組規劃預覽：</h3>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 30%">AI 智慧模組</th>
+                  <th style="width: 20%">對應介面位置</th>
+                  <th style="width: 50%">未來啟用後之功能預期</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>AI 智慧問答大廳 (AiChatPanel)</strong></td>
+                  <td>首頁 / 右側快捷懸浮面板</td>
+                  <td>提供同仁直接向 AI 助手發問，AI 將自動檢索知識庫中的公開及有權限的部門文章，進行可信賴的語意問答與資料整理。</td>
+                </tr>
+                <tr>
+                  <td><strong>AI 智慧寫作輔助 (Correct/Generate)</strong></td>
+                  <td>文章新建與編輯介面</td>
+                  <td>
+                    在建立文章時自動生成 Markdown 大綱或內文；在編輯文章時自動進行錯字校正、語句修飾與格式排版。<br>
+                    <strong>套用機制：</strong>提供「套用」與「捨棄」按鈕，同仁可一鍵將 AI 預覽內容覆寫入 Vditor 編輯器中。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>AI 標籤自動指派</strong></td>
+                  <td>文章/附件標籤管理</td>
+                  <td>AI 將根據文章與附件的內容，自動分析並推薦最合適的關鍵字標籤進行一鍵標定，大幅提升檢索精準度。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <footer class="manual-footer">
+        <p>© 2026 GigaSolar 集團. All Rights Reserved. 內部機密文件，嚴禁翻印外洩。</p>
+        <p>系統版本：v1.2.0-beta | 最後更新日期：2026-05-22</p>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    // Smooth highlite for TOC based on scrolling
+    const sections = document.querySelectorAll('section');
+    const navItems = document.querySelectorAll('.nav-item');
+
+    window.addEventListener('scroll', () => {
+      let current = '';
+      sections.forEach(section => {
+        const sectionTop = section.offsetTop;
+        const sectionHeight = section.clientHeight;
+        if (pageYOffset >= (sectionTop - 150)) {
+          current = section.getAttribute('id');
+        }
+      });
+
+      navItems.forEach(item => {
+        item.classList.remove('active');
+        const link = item.querySelector('a');
+        if (link.getAttribute('href') === `#${current}`) {
+          item.classList.add('active');
+        }
+      });
+    });
+  </script>
+</body>
+</html>
