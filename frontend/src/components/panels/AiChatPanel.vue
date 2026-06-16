@@ -36,6 +36,25 @@
           </div>
           <div v-for="msg in messages" :key="msg.id" class="message" :class="msg.role">
             <div class="msg-bubble">
+              <!-- 思考過程（可摺疊） -->
+              <div
+                v-if="msg.role === 'ai' && msg.thinkContent"
+                class="think-block"
+                :class="{ expanded: msg.thinkExpanded, thinking: msg.streaming && msg.thinkStreaming }"
+              >
+                <button class="think-toggle" @click="msg.thinkExpanded = !msg.thinkExpanded">
+                  <span class="think-icon">
+                    <span v-if="msg.streaming && msg.thinkStreaming" class="think-spinner">⟳</span>
+                    <span v-else>💡</span>
+                  </span>
+                  <span class="think-label">
+                    {{ msg.streaming && msg.thinkStreaming ? '思考中...' : '已完成思考' }}
+                  </span>
+                  <span class="think-chevron">{{ msg.thinkExpanded ? '▲' : '▼' }}</span>
+                </button>
+                <div v-show="msg.thinkExpanded" class="think-content">{{ msg.thinkContent }}</div>
+              </div>
+
               <!-- 串流中：純文字逐字顯示；串流結束：轉為 Markdown HTML -->
               <div v-if="msg.streaming" class="msg-content streaming-content">{{ msg.content }}</div>
               <div v-else class="msg-content markdown-body" v-html="msg.htmlContent || msg.content" />
@@ -541,11 +560,22 @@ async function sendCommand(cmdKey) {
   messages.value.push({
     id: Date.now() + 1, role: 'ai',
     content: '', htmlContent: '', streaming: true, keywords: [], addedKeywords: [], canApply: false,
+    thinkContent: '', thinkExpanded: false, thinkStreaming: false,
   })
   const aiMsg = messages.value[messages.value.length - 1]
 
-  const onDelta = (delta) => { aiMsg.content += delta; scrollToBottom() }
+  const onThinking = (chunk) => {
+    aiMsg.thinkContent   += chunk
+    aiMsg.thinkStreaming  = true
+    scrollToBottom()
+  }
+  const onDelta = (delta) => {
+    aiMsg.thinkStreaming = false  // thinking ended when first delta arrives
+    aiMsg.content += delta
+    scrollToBottom()
+  }
   const onDone  = async () => {
+    aiMsg.thinkStreaming = false
     updateHtml(aiMsg)
     await nextTick()
     aiMsg.streaming = false
@@ -554,6 +584,7 @@ async function sendCommand(cmdKey) {
     scrollToBottom()
   }
   const onError = async () => {
+    aiMsg.thinkStreaming = false
     aiMsg.streaming = false
     streaming.value = false
     aiMsg.content  += '\n\n> ⚠️ AI 服務發生錯誤，請稍後再試。'
@@ -580,7 +611,7 @@ async function sendCommand(cmdKey) {
       articleContent = `\n\n---\n文章內文：\n${props.contextContent}`
     }
 
-    await aiService.streamSummarize(articleContent, { onDelta, onDone, onError }, signal, cmdKey)
+    await aiService.streamSummarize(articleContent, { onThinking, onDelta, onDone, onError }, signal, cmdKey)
   } catch (err) {
     if (err.name === 'AbortError') return
     streaming.value  = false
@@ -617,16 +648,24 @@ async function sendMessage() {
   messages.value.push({
     id: Date.now() + 1, role: 'ai',
     content: '', htmlContent: '', streaming: true, keywords: [], addedKeywords: [], canApply: false,
+    thinkContent: '', thinkExpanded: false, thinkStreaming: false,
   })
   const aiMsg = messages.value[messages.value.length - 1]
 
   // 串流中直接更新 content（template 用純文字顯示）；結束後才轉 HTML
+  const onThinking = (chunk) => {
+    aiMsg.thinkContent  += chunk
+    aiMsg.thinkStreaming  = true
+    scrollToBottom()
+  }
   const onDelta = (delta) => {
+    aiMsg.thinkStreaming = false  // thinking ended when first delta arrives
     aiMsg.content += delta
     scrollToBottom()
   }
   const onDone  = async () => {
     // 串流結束：先轉換 Markdown HTML，下一 tick 才切換顯示模式避免閃爍
+    aiMsg.thinkStreaming = false
     updateHtml(aiMsg)
     await nextTick()
     aiMsg.streaming = false
@@ -639,6 +678,7 @@ async function sendMessage() {
     scrollToBottom()
   }
   const onError = async () => {
+    aiMsg.thinkStreaming = false
     aiMsg.streaming = false
     streaming.value = false
     aiMsg.content += '\n\n> ⚠️ AI 服務發生錯誤，請稍後再試。'
@@ -668,16 +708,16 @@ async function sendMessage() {
         : ''
 
       const fullContent = (capturedInput || '請分析以上文章內容') + articleContext + contextPart
-      await aiService.streamSummarize(fullContent, { onDelta, onDone, onError }, signal)
+      await aiService.streamSummarize(fullContent, { onThinking, onDelta, onDone, onError }, signal)
 
     } else if (capturedFile) {
       const fd = new FormData()
       fd.append('file', capturedFile)
-      await aiService.streamWritingAssist(fd, { onDelta, onDone, onError }, signal)
+      await aiService.streamWritingAssist(fd, { onThinking, onDelta, onDone, onError }, signal)
 
     } else {
       const content = isCorrect ? props.contextContent : capturedInput
-      await aiService.streamWritingAssist({ content }, { onDelta, onDone, onError }, signal)
+      await aiService.streamWritingAssist({ content }, { onThinking, onDelta, onDone, onError }, signal)
     }
   } catch (err) {
     if (err.name === 'AbortError') return
@@ -817,6 +857,46 @@ async function sendMessage() {
   color: var(--color-primary); font-weight: 700;
 }
 @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+
+/* Think block */
+.think-block {
+  margin-bottom: 8px;
+  border: 1px solid rgba(124,58,237,.2);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(124,58,237,.03);
+}
+.think-block.thinking {
+  border-color: rgba(124,58,237,.4);
+  background: rgba(124,58,237,.06);
+}
+.think-toggle {
+  width: 100%; display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px; border: none; background: none; cursor: pointer;
+  font-size: 12px; color: #7c3aed; text-align: left;
+  transition: background var(--transition);
+}
+.think-toggle:hover { background: rgba(124,58,237,.08); }
+.think-icon { font-size: 13px; flex-shrink: 0; }
+.think-label { flex: 1; font-weight: 500; }
+.think-chevron { font-size: 10px; color: var(--color-text-muted); }
+.think-spinner {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.think-content {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-top: 1px solid rgba(124,58,237,.15);
+  max-height: 200px;
+  overflow-y: auto;
+  background: rgba(255,255,255,.5);
+}
 
 /* Keyword area */
 .keyword-area {

@@ -872,7 +872,7 @@ export const crossDeptService = {
 
 
 // ── AI SSE Stream Helper ──────────────────────────────────────
-async function readSSEStream(response, { onDelta, onDone, onError } = {}) {
+async function readSSEStream(response, { onThinking, onDelta, onDone, onError } = {}) {
   const reader  = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer    = ''
@@ -889,8 +889,9 @@ async function readSSEStream(response, { onDelta, onDone, onError } = {}) {
         if (data === '[DONE]') { onDone?.(); return }
         try {
           const parsed = JSON.parse(data)
-          if (parsed.error) { onError?.(parsed.error); return }
-          if (parsed.delta) onDelta?.(parsed.delta)
+          if (parsed.error)   { onError?.(parsed.error); return }
+          if (parsed.thinking) onThinking?.(parsed.thinking)
+          if (parsed.delta)    onDelta?.(parsed.delta)
         } catch { /* 略過格式異常 chunk */ }
       }
     }

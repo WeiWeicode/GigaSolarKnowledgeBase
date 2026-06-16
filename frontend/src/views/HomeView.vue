@@ -30,10 +30,10 @@
             </el-check-tag>
           </div>
         </div>
-        <!-- <div class="ai-badge" @click="aiPanelVisible = true">
+        <div class="ai-badge" @click="aiPanelVisible = true">
           <el-icon><MagicStick /></el-icon>
           <span>AI 模式</span>
-        </div> -->
+        </div>
       </div>
 
       <!-- Search results -->

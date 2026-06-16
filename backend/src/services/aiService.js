@@ -1,5 +1,5 @@
-const OLLAMA_URL   = process.env.OLLAMA_URL   || 'http://localhost:11434'
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3.5:4b'
+const LLAMA_URL   = process.env.llama_URL   || 'http://localhost:8080/v1'
+const LLAMA_MODEL = process.env.llama_MODEL || 'default'
 
 // ── System Prompts ────────────────────────────────────────────
 const SYSTEM_PROMPTS = {
@@ -54,8 +54,8 @@ function buildWritingPrompt(content, sourceFilename) {
 
 // ── 核心 SSE 串流函式 ─────────────────────────────────────────
 /**
- * 呼叫 Ollama /api/chat，以 SSE 串流方式將回應逐 chunk 轉發至 Express Response。
- * 使用 for await...of 讀取 NDJSON 串流，在 Docker Node.js 環境中最穩定。
+ * 呼叫 llama.cpp /v1/chat/completions（OpenAI 相容 API），
+ * 以 SSE 串流方式將回應逐 chunk 轉發至 Express Response。
  * @param {string} systemPrompt
  * @param {string} userPrompt
  * @param {object} res - Express Response（已設定 SSE headers）
@@ -64,28 +64,105 @@ function buildWritingPrompt(content, sourceFilename) {
 async function streamToSSE(systemPrompt, userPrompt, res) {
   const { default: fetch } = await import('node-fetch')
 
-  const response = await fetch(`${OLLAMA_URL}/api/chat`, {
+  const response = await fetch(`${LLAMA_URL}/chat/completions`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: OLLAMA_MODEL,
+      model: LLAMA_MODEL,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user',   content: userPrompt },
       ],
-      stream:  true,
-      think:   false,
-      options: { temperature: 0.3 },
+      stream:      true,
+      temperature: 0.3,
     }),
     timeout: 300000,
   })
 
   if (!response.ok) {
-    throw new Error(`Ollama API 錯誤：${response.status} ${response.statusText}`)
+    throw new Error(`llama.cpp API 錯誤：${response.status} ${response.statusText}`)
   }
 
-  let fullText = ''
-  let buffer   = ''
+  let fullText    = ''
+  let buffer      = ''
+  let _debugLogged = false
+  // State machine to separate <think>...</think> from normal output
+  let segBuf   = ''    // partial-tag lookahead buffer
+  let inThink  = false
+
+  /**
+   * Process a raw token:
+   * - thinking content  → SSE { thinking }
+   * - normal content    → SSE { delta }
+   * Both are written directly to res to preserve streaming order.
+   */
+  function processToken(raw) {
+    segBuf += raw
+
+    while (segBuf.length > 0) {
+      if (inThink) {
+        const closeIdx = segBuf.indexOf('</think>')
+        if (closeIdx !== -1) {
+          // Flush thinking text up to the closing tag
+          const thinkChunk = segBuf.slice(0, closeIdx)
+          if (thinkChunk && !res.writableEnded) {
+            res.write(`data: ${JSON.stringify({ thinking: thinkChunk })}\n\n`)
+          }
+          segBuf  = segBuf.slice(closeIdx + '</think>'.length)
+          inThink = false
+        } else {
+          // Check if tail could be a partial </think> prefix
+          const maxPrefix = '</think>'.length - 1
+          let safeLen     = segBuf.length
+          for (let pLen = maxPrefix; pLen >= 1; pLen--) {
+            if (segBuf.endsWith('</think>'.slice(0, pLen))) {
+              safeLen = segBuf.length - pLen
+              break
+            }
+          }
+          const thinkChunk = segBuf.slice(0, safeLen)
+          if (thinkChunk && !res.writableEnded) {
+            res.write(`data: ${JSON.stringify({ thinking: thinkChunk })}\n\n`)
+          }
+          segBuf = segBuf.slice(safeLen)
+          break
+        }
+      } else {
+        const openIdx = segBuf.indexOf('<think>')
+        if (openIdx === -1) {
+          // Check if tail could be a partial <think> prefix
+          const maxPrefix = '<think>'.length - 1
+          let safeLen     = segBuf.length
+          for (let pLen = maxPrefix; pLen >= 1; pLen--) {
+            if (segBuf.endsWith('<think>'.slice(0, pLen))) {
+              safeLen = segBuf.length - pLen
+              break
+            }
+          }
+          const normalChunk = segBuf.slice(0, safeLen)
+          if (normalChunk) {
+            fullText += normalChunk
+            if (!res.writableEnded) {
+              res.write(`data: ${JSON.stringify({ delta: normalChunk })}\n\n`)
+            }
+          }
+          segBuf = segBuf.slice(safeLen)
+          break
+        } else {
+          // Emit normal text before <think>
+          const normalChunk = segBuf.slice(0, openIdx)
+          if (normalChunk) {
+            fullText += normalChunk
+            if (!res.writableEnded) {
+              res.write(`data: ${JSON.stringify({ delta: normalChunk })}\n\n`)
+            }
+          }
+          segBuf  = segBuf.slice(openIdx + '<think>'.length)
+          inThink = true
+        }
+      }
+    }
+  }
 
   try {
     for await (const chunk of response.body) {
@@ -94,22 +171,36 @@ async function streamToSSE(systemPrompt, userPrompt, res) {
       buffer = lines.pop() // 保留最後不完整的行
 
       for (const line of lines) {
-        if (!line.trim()) continue
+        const trimmed = line.trim()
+        if (!trimmed || !trimmed.startsWith('data:')) continue
+
+        const dataStr = trimmed.slice(5).trim()
+        if (dataStr === '[DONE]') {
+          if (!res.writableEnded) {
+            res.write(`data: [DONE]\n\n`)
+          }
+          return fullText
+        }
+
         try {
-          const json  = JSON.parse(line)
-          const token = json.message?.content || ''
-          if (token) {
-            fullText += token
+          const json  = JSON.parse(dataStr)
+          const delta = json.choices?.[0]?.delta || {}
+
+          // Debug: log the first non-empty delta to inspect llama.cpp response format
+          if (!fullText && !_debugLogged && (delta.content || delta.reasoning_content)) {
+            console.log('[aiService] first delta keys:', Object.keys(delta))
+            _debugLogged = true
+          }
+
+          // reasoning_content: llama.cpp / OpenAI-o style thinking field
+          if (delta.reasoning_content) {
             if (!res.writableEnded) {
-              res.write(`data: ${JSON.stringify({ delta: token })}\n\n`)
+              res.write(`data: ${JSON.stringify({ thinking: delta.reasoning_content })}\n\n`)
             }
           }
-          if (json.done) {
-            if (!res.writableEnded) {
-              res.write(`data: [DONE]\n\n`)
-            }
-            return fullText
-          }
+
+          // content: normal response text (may also contain <think> tags on some backends)
+          if (delta.content) processToken(delta.content)
         } catch {
           // 略過非 JSON 行
         }

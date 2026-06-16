@@ -10,10 +10,10 @@
           <el-button v-if="isEditing && mode !== 'create'" text circle class="back-btn" title="退回查看" @click="cancelEdit">
             <el-icon size="18"><ArrowLeft /></el-icon>
           </el-button>
-          <!-- <div class="ai-badge" @click="showAiPanel = true">
+          <div class="ai-badge" @click="showAiPanel = true">
             <el-icon><MagicStick /></el-icon>
             <span>AI 輔助</span>
-          </div> -->
+          </div>
           <el-input v-if="isEditing || mode === 'create'" v-model="form.title" placeholder="輸入文章標題（將顯示於目錄樹）" size="large" class="title-input" />
           <h1 v-else class="article-title">{{ form.title || '（未命名文章）' }}</h1>
         </div>
