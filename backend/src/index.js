@@ -7,8 +7,10 @@ const express = require('express');
 const cors    = require('cors');
 
 const { initKBPool, initNaNaPool, closeAllPools } = require('./config/db');
-const { sequelize, UserExtraDepartment, Tag } = require('./models');
+const { sequelize, UserExtraDepartment, Tag, AiConfig, AiPromptTemplate } = require('./models');
 const { seedIfEmpty } = require('./scripts/seedDirectories');
+const { seedAiPrompts } = require('./scripts/seedAiPrompts');
+
 
 const app  = express();
 const PORT = process.env.PORT || 5155;
@@ -73,7 +75,9 @@ async function startServer() {
 
     // 2.1 自動建立新增的 Table（不影響既有資料表）
     await UserExtraDepartment.sync({ force: false });
-    console.log('✅ user_extra_departments 資料表已就緒');
+    await AiConfig.sync({ force: false });
+    await AiPromptTemplate.sync({ force: false });
+    console.log('✅ user_extra_departments, ai_configs, ai_prompt_templates 資料表已就緒');
 
     // 2.2 Tags 表擴欄（新增 departments / custom_order / click_count / is_public）
     //     使用原生 SQL 逐欄判斷，避免 Sequelize alter:true 在 MSSQL UNIQUE 語法問題
@@ -94,9 +98,10 @@ async function startServer() {
     await addTagColIfMissing('is_public',    'is_public    BIT NOT NULL DEFAULT 0');
     console.log('✅ tags 資料表已就緒（含新增欄位）');
 
-    // 3. 目錄樹種子資料（directories 表為空時自動初始化）
+    // 3. 目錄樹與 AI 提示詞種子資料（當表為空時自動初始化）
     console.log('');
     await seedIfEmpty();
+    await seedAiPrompts();
 
     // 4. 啟動 HTTP
     app.listen(PORT, () => {

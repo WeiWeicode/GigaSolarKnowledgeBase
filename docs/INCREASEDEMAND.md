@@ -255,3 +255,29 @@
 - `docs/UserManual.html`（新增）：完成具有卓越視覺設計的 HTML 使用手冊。詳細列出並說明了前台與後台的所有按鈕功能，深入講解了級職查看門檻與主管跨部門權限管理機制的背景邏輯，並對 AI 智慧輔助功能進行「尚未啟用」的重點標示與警告橫幅公告。
 完成日期: 2026-05-22
 
+---
+
+# AI 提示詞與配置資料庫化
+狀態: ✅ 完成
+新增需求日期: 2026-06-16
+預期功能:
+1. 將原本寫死在 `aiService.js` 中的 AI 提示詞（System Prompts 與 User Prompt Templates）與 AI 模型配置（如 `llama_url`、`llama_model`，以及 `temperature`、`timeout` 等參數）移至資料庫中管理，方便靈活調整。
+2. 規劃對齊專案命名規範的資料表 Schema，提供獨立分離式與整合型兩種設計方案。
+3. 規劃改寫後端 `aiService.js` 的邏輯，整合快取機制以避免每次呼叫都查詢資料庫。
+預期調整項目:
+- 新增規劃文件 `docs/AI_PROMPT_DB_PLAN.md`。
+- 修改後端代碼實現資料庫存取 AI 提示詞與配置。
+規劃調整內容:
+- 在 `docs/AI_PROMPT_DB_PLAN.md` 產出詳細規劃，並在後端實作 Model、Seed、和 aiService.js 的改寫。
+實際調整項目:
+- `docs/AI_PROMPT_DB_PLAN.md`（新增）：完成規劃文件的撰寫，內含方案 A（獨立分離式）與方案 B（整合型）之詳細規格與實作大綱。
+- `backend/src/models/AiConfig.js`（新增）：定義 `ai_configs` 表的模型欄位。
+- `backend/src/models/AiPromptTemplate.js`（新增）：定義 `ai_prompt_templates` 表的模型欄位。
+- `backend/src/models/index.js`（修改）：註冊並匯出 `AiConfig` 與 `AiPromptTemplate` 模型。
+- `backend/src/index.js`（修改）：伺服器啟動時自動同步建表，並於目錄樹初始化後調用 `seedAiPrompts()` 初始化資料。
+- `backend/src/scripts/seedAiPrompts.js`（新增）：提供 AI 提示詞與配置初始化的 seed 腳本。
+- `backend/src/services/aiService.js`（修改）：重構為動態從資料庫載入 Prompt 與配置，整合 local memory 快取（TTL 5 分鐘）與 fallback 備份邏輯。
+完成日期: 2026-06-16
+
+
+

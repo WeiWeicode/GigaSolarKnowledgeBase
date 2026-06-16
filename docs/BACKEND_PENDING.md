@@ -12,6 +12,8 @@
 | B-06 | 🗒️ 低 | Admin | 後台功能端點尚未建立：垃圾桶管理、系統日誌、AI 設定儲存、儲存空間查詢 | ⏳ 待修 |
 | B-07 | 🔴 高 | AI | Ollama `think: false` 放在 `options` 內無效；`X-Accel-Buffering: no` 未設定導致 Nginx 緩衝 SSE | ✅ 已修正 |
 | B-08 | 🟡 中 | Article/Tag | 新增 `PATCH /api/v1/articles/:id/tags` 輕量 endpoint（AI 建議標籤一鍵加入） | ✅ 已修正 |
+| B-12 | 🟡 中 | AI | AI 提示詞與模型配置改為資料庫存取，改寫 aiService.js 從 DB 讀取並整合 Local 快取 | ✅ 已修正 |
+
 
 ---
 
@@ -286,3 +288,22 @@ article.setDataValue('deptCode', deptCode);
 **驗證方式：**
 - `GET /api/v1/articles/:id` 回傳中應包含 `deptCode` 欄位。
 - 搭配前端 BUG-026 修正：跨部門點進文章後，Header 應切換至文章所屬部門，「所屬目錄」應顯示目錄名稱而非 raw ID。
+
+---
+
+### B-12｜AI 提示詞與模型配置資料庫化
+- **狀態**：✅ 已修正（2026-06-16）
+- **需求說明**：原本在 `aiService.js` 中硬編碼的 System Prompts 和 User Prompt Templates，以及配置參數，需要抽離到 SQL Server 資料庫中，以利彈性管理與動態修改。
+- **修正檔案**：
+  - `backend/src/models/AiConfig.js`（新增）：定義 `ai_configs` 表，儲存模型連線與溫度、超時配置。
+  - `backend/src/models/AiPromptTemplate.js`（新增）：定義 `ai_prompt_templates` 表，將 System Prompts 與 User Prompt Templates 依模式合併儲存（方案 B 兩張表方案）。
+  - `backend/src/models/index.js`（修改）：註冊並導出新 Model。
+  - `backend/src/index.js`（修改）：啟動時自動同步 `AiConfig` 與 `AiPromptTemplate` 建表，並在目錄樹初始化後自動執行 `seedAiPrompts()` 寫入種子資料。
+  - `backend/src/scripts/seedAiPrompts.js`（新增）：AI 提示詞與配置的種子資料初始化腳本，可獨立執行，也可在伺服器啟動時自動運行。
+  - `backend/src/services/aiService.js`（修改）：重構原硬編碼的常數，改為自 DB 讀取。同時實作了 in-memory 記憶體快取（TTL 5分鐘）以防止頻繁查詢資料庫，並提供當 DB 無法存取時的 fallback 備用機制。
+- **驗證方式**：
+  1. 啟動伺服器，伺服器日誌應顯示 `✅ user_extra_departments, ai_configs, ai_prompt_templates 資料表已就緒`。
+  2. 檢查 SQL Server 資料庫中是否有 `ai_configs` 與 `ai_prompt_templates` 表，且已寫入初始資料。
+  3. 進入前台點擊 AI 文章摘要與寫作助手，確認串流輸出流暢且無報錯。
+
+
