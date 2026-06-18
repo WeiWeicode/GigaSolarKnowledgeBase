@@ -25,6 +25,7 @@ async function getActiveConfig() {
         modelName:   activeConfig.model_name,
         temperature: Number(activeConfig.temperature),
         timeoutMs:   Number(activeConfig.timeout_ms),
+        aiTool:      activeConfig.ai_tool,
       };
     } else {
       cache.config = {
@@ -32,6 +33,7 @@ async function getActiveConfig() {
         modelName:   process.env.llama_MODEL || 'default',
         temperature: 0.3,
         timeoutMs:   300000,
+        aiTool:      'llama.cpp',
       };
     }
     cache.configExpiry = now + CACHE_TTL;
@@ -43,6 +45,7 @@ async function getActiveConfig() {
         modelName:   process.env.llama_MODEL || 'default',
         temperature: 0.3,
         timeoutMs:   300000,
+        aiTool:      'llama.cpp',
       };
     }
   }
@@ -185,6 +188,10 @@ async function streamToSSE(systemPrompt, userPrompt, res, config) {
     throw new Error(`llama.cpp API 錯誤：${response.status} ${response.statusText}`);
   }
 
+  const aiTool = config.aiTool || 'llama.cpp';
+  const openTag = aiTool === 'vllm' ? '<thought>' : '<think>';
+  const closeTag = aiTool === 'vllm' ? '</thought>' : '</think>';
+
   let fullText     = '';
   let buffer       = '';
   let _debugLogged = false;
@@ -196,19 +203,19 @@ async function streamToSSE(systemPrompt, userPrompt, res, config) {
 
     while (segBuf.length > 0) {
       if (inThink) {
-        const closeIdx = segBuf.indexOf('</think>');
+        const closeIdx = segBuf.indexOf(closeTag);
         if (closeIdx !== -1) {
           const thinkChunk = segBuf.slice(0, closeIdx);
           if (thinkChunk && !res.writableEnded) {
             res.write(`data: ${JSON.stringify({ thinking: thinkChunk })}\n\n`);
           }
-          segBuf  = segBuf.slice(closeIdx + '</think>'.length);
+          segBuf  = segBuf.slice(closeIdx + closeTag.length);
           inThink = false;
         } else {
-          const maxPrefix = '</think>'.length - 1;
+          const maxPrefix = closeTag.length - 1;
           let safeLen     = segBuf.length;
           for (let pLen = maxPrefix; pLen >= 1; pLen--) {
-            if (segBuf.endsWith('</think>'.slice(0, pLen))) {
+            if (segBuf.endsWith(closeTag.slice(0, pLen))) {
               safeLen = segBuf.length - pLen;
               break;
             }
@@ -221,12 +228,12 @@ async function streamToSSE(systemPrompt, userPrompt, res, config) {
           break;
         }
       } else {
-        const openIdx = segBuf.indexOf('<think>');
+        const openIdx = segBuf.indexOf(openTag);
         if (openIdx === -1) {
-          const maxPrefix = '<think>'.length - 1;
+          const maxPrefix = openTag.length - 1;
           let safeLen     = segBuf.length;
           for (let pLen = maxPrefix; pLen >= 1; pLen--) {
-            if (segBuf.endsWith('<think>'.slice(0, pLen))) {
+            if (segBuf.endsWith(openTag.slice(0, pLen))) {
               safeLen = segBuf.length - pLen;
               break;
             }
@@ -248,7 +255,7 @@ async function streamToSSE(systemPrompt, userPrompt, res, config) {
               res.write(`data: ${JSON.stringify({ delta: normalChunk })}\n\n`);
             }
           }
-          segBuf  = segBuf.slice(openIdx + '<think>'.length);
+          segBuf  = segBuf.slice(openIdx + openTag.length);
           inThink = true;
         }
       }
@@ -277,14 +284,16 @@ async function streamToSSE(systemPrompt, userPrompt, res, config) {
           const json  = JSON.parse(dataStr);
           const delta = json.choices?.[0]?.delta || {};
 
-          if (!fullText && !_debugLogged && (delta.content || delta.reasoning_content)) {
+          const reasoning = delta.reasoning_content || delta.thought || delta.reasoning;
+
+          if (!fullText && !_debugLogged && (delta.content || reasoning)) {
             console.log('[aiService] first delta keys:', Object.keys(delta));
             _debugLogged = true;
           }
 
-          if (delta.reasoning_content) {
+          if (reasoning) {
             if (!res.writableEnded) {
-              res.write(`data: ${JSON.stringify({ thinking: delta.reasoning_content })}\n\n`);
+              res.write(`data: ${JSON.stringify({ thinking: reasoning })}\n\n`);
             }
           }
 

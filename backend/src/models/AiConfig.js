@@ -43,6 +43,12 @@ const AiConfig = sequelize.define('AiConfig', {
     defaultValue: false,
     comment: '是否啟用（同一時間僅能有一筆為啟用）',
   },
+  ai_tool: {
+    type: DataTypes.STRING(50),
+    allowNull: false,
+    defaultValue: 'llama.cpp',
+    comment: 'AI 工具/提供者名稱（例如：llama.cpp, vllm, ollama）',
+  },
   created_at: {
     type: DataTypes.DATE,
     allowNull: false,

@@ -13,6 +13,7 @@
 | B-07 | 🔴 高 | AI | Ollama `think: false` 放在 `options` 內無效；`X-Accel-Buffering: no` 未設定導致 Nginx 緩衝 SSE | ✅ 已修正 |
 | B-08 | 🟡 中 | Article/Tag | 新增 `PATCH /api/v1/articles/:id/tags` 輕量 endpoint（AI 建議標籤一鍵加入） | ✅ 已修正 |
 | B-12 | 🟡 中 | AI | AI 提示詞與模型配置改為資料庫存取，改寫 aiService.js 從 DB 讀取並整合 Local 快取 | ✅ 已修正 |
+| B-13 | 🔴 高 | AI | vLLM 思考標籤與 API 欄位自適應（增加 ai_tool 欄位及標籤切換） | ✅ 已修正 |
 
 
 ---
@@ -305,5 +306,20 @@ article.setDataValue('deptCode', deptCode);
   1. 啟動伺服器，伺服器日誌應顯示 `✅ user_extra_departments, ai_configs, ai_prompt_templates 資料表已就緒`。
   2. 檢查 SQL Server 資料庫中是否有 `ai_configs` 與 `ai_prompt_templates` 表，且已寫入初始資料。
   3. 進入前台點擊 AI 文章摘要與寫作助手，確認串流輸出流暢且無報錯。
+
+---
+
+### B-13｜vLLM 思考標籤與 API 欄位自適應
+- **狀態**：✅ 已修正（2026-06-18）
+- **根本原因**：切換為 vLLM 引擎後，模型輸出的思考標籤可能是 `<thought>` 或是直接回傳結構化的 `thought` / `reasoning` / `reasoning_content` 欄位。舊代碼硬編碼了 `<think>` 與 `delta.reasoning_content`，導致 vLLM 的思考過程無法被解析與提取，而漏入正文中，且摺疊思考區也無法正常顯示。
+- **修正檔案**：
+  - `backend/src/models/AiConfig.js`：為 `AiConfig` 模型新增 `ai_tool` 欄位以儲存引擎名稱。
+  - `backend/src/index.js`：啟動時新增原生 SQL 語法自動向 `ai_configs` 表追加 `ai_tool` 欄位，完成平滑升級。
+  - `backend/src/scripts/seedAiPrompts.js`：在 Seeder 腳本中加入 `ai_tool: 'llama.cpp'` 預設值。
+  - `backend/src/services/aiService.js`：在快取讀取中加入 `aiTool` 支援；並在 `streamToSSE` 裡動態根據當前工具（如 `vllm` 則改用 `<thought>` 標籤，或預設使用 `<think>` 標籤）；同時聯集處理 choices delta 的 `reasoning_content`、`thought` 與 `reasoning` 屬性，防禦性提取結構化思考文字並回傳前端。
+- **驗證方式**：
+  1. 重啟後端伺服器，確認資料庫自動新增了 `ai_tool` 欄位。
+  2. 檢查 `aiService.js` 單元流程，確保啟用 `vllm` 設定時，後端會過濾 `<thought>` 標籤並正常觸發 `{ thinking: ... }`。
+
 
 

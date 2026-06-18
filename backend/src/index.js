@@ -97,6 +97,21 @@ async function startServer() {
     await addTagColIfMissing('click_count',  'click_count  INT NOT NULL DEFAULT 0');
     await addTagColIfMissing('is_public',    'is_public    BIT NOT NULL DEFAULT 0');
     console.log('✅ tags 資料表已就緒（含新增欄位）');
+    
+    // 2.3 AiConfig 表擴欄（新增 ai_tool）
+    const addAiConfigColIfMissing = async (col, ddl) => {
+      await sequelize.query(`
+        IF NOT EXISTS (
+          SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_NAME = 'ai_configs' AND COLUMN_NAME = '${col}'
+        )
+        BEGIN
+          ALTER TABLE ai_configs ADD ${ddl}
+        END
+      `);
+    };
+    await addAiConfigColIfMissing('ai_tool', "ai_tool VARCHAR(50) NOT NULL DEFAULT 'llama.cpp'");
+    console.log('✅ ai_configs 資料表已就緒（含新增欄位）');
 
     // 3. 目錄樹與 AI 提示詞種子資料（當表為空時自動初始化）
     console.log('');

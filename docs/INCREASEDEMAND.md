@@ -276,8 +276,38 @@
 - `backend/src/models/index.js`（修改）：註冊並匯出 `AiConfig` 與 `AiPromptTemplate` 模型。
 - `backend/src/index.js`（修改）：伺服器啟動時自動同步建表，並於目錄樹初始化後調用 `seedAiPrompts()` 初始化資料。
 - `backend/src/scripts/seedAiPrompts.js`（新增）：提供 AI 提示詞與配置初始化的 seed 腳本。
-- `backend/src/services/aiService.js`（修改）：重構為動態從資料庫載入 Prompt 與配置，整合 local memory 快取（TTL 5 分鐘）與 fallback 備份邏輯。
+- `backend/src/services/aiService.js`（修改）：重構原硬編碼的常數，改為自 DB 讀取。同時實作了 in-memory 記憶體快取（TTL 5分鐘）以防止頻繁查詢資料庫，並提供當 DB 無法存取時的 fallback 備用機制。
 完成日期: 2026-06-16
 
+---
 
-
+# vLLM 思考標籤自適應優化與 AI 工具配置擴充
+狀態: ✅ 完成
+新增需求日期: 2026-06-18
+預期功能:
+1. 擴充 AI 設定以支援不同的推理引擎工具（如 vLLM、llama.cpp、Ollama 等）。
+2. 在 AiConfig 中新增「使用工具」欄位，以記錄當前啟用的 AI 推理引擎。
+3. 根據當前啟用的 AI 工具，後端能夠自動切換並過濾對應的思考標籤（例如 vLLM 使用 `<thought>` / `</thought>`，而 llama.cpp 使用 `<think>` / `</think>`）。
+4. 後端 SSE 串流能夠將 vLLM 或其他推理引擎回傳的 `reasoning_content`、`thought`、`reasoning` 欄位統一轉換為 `thinking` 事件發送至前端。
+5. 前端在收到串流回應渲染時，能夠容錯並自動解析並剝離內容中可能殘留的 `<think>` 或 `<thought>` 標籤，將其提取至思考摺疊區。
+預期調整項目:
+- 後端 `backend/src/models/AiConfig.js`：定義新增 `ai_tool` 欄位。
+- 後端 `backend/src/index.js`：啟動時自動檢查並新增 `ai_tool` 欄位至資料庫（針對 SQL Server 的原生 SQL 升級指令）。
+- 後端 `backend/src/scripts/seedAiPrompts.js`：在 Seed 預設 AI 配置時新增 `ai_tool` 欄位之預設值 `'llama.cpp'`。
+- 後端 `backend/src/services/aiService.js`：
+  - 在 `getActiveConfig` 載入 `aiTool`。
+  - 在 `streamToSSE` 中，根據 `aiTool` 動態設定 `openTag` 與 `closeTag`。
+  - 在 SSE 接收 Choices Delta 時，聯集讀取 `reasoning_content`、`thought`、`reasoning` 欄位並傳送。
+- 前端 `frontend/src/components/panels/AiChatPanel.vue`：
+  - 更新 `updateHtml` 函式，新增正則表達式自動辨識正文中的 `<think>` / `<thought>` 標籤，剝離其標籤與內容，並自動將其合併至摺疊的 `thinkContent` 區中，保證正文顯示乾淨。
+規劃調整內容:
+1. 在資料庫 `AiConfig` 新增 `ai_tool` 欄位。
+2. 後端根據 `aiTool` 切換 Parser 標籤。
+3. 前端在 HTML 渲染前自動進行標籤過濾提取。
+實際調整項目:
+- 新增 `backend/src/models/AiConfig.js` 中的 `ai_tool` 欄位定義。
+- 新增 `backend/src/index.js` 啟動時自動擴欄邏輯 `addAiConfigColIfMissing`。
+- 修改 `backend/src/scripts/seedAiPrompts.js` 在寫入種子資料時提供 `ai_tool: 'llama.cpp'` 預設值。
+- 修改 `backend/src/services/aiService.js` 中 `getActiveConfig` 映射 `aiTool`，並在 `streamToSSE` 中根據 `aiTool` 動態判斷 `<think>` / `<thought>` 標籤及支援多種 `reasoning_content` 欄位抽取。
+- 修改 `frontend/src/components/panels/AiChatPanel.vue` 的 `updateHtml` 函式，用正則表達式支援已閉合及未閉合的 `<think>` / `<thought>` 標籤過濾和提取。
+完成日期: 2026-06-18

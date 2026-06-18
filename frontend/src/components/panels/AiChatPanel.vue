@@ -532,6 +532,45 @@ async function confirmApply(content) {
 
 // ── Markdown 渲染 ─────────────────────────────────────────────
 function updateHtml(msg) {
+  if (msg.role === 'ai' && msg.content) {
+    // 檢查是否有 <think>...</think> 或 <thought>...</thought>
+    const thinkRegex = /<(think|thought)>([\s\S]*?)<\/\1>/gi;
+    let match;
+    let hasThink = false;
+    let extractedThink = '';
+    
+    // 循環找出所有的思考標籤並提取內容
+    while ((match = thinkRegex.exec(msg.content)) !== null) {
+      hasThink = true;
+      extractedThink += (extractedThink ? '\n' : '') + match[2].trim();
+    }
+    
+    if (hasThink) {
+      // 將標籤及內容從正文移除
+      msg.content = msg.content.replace(thinkRegex, '').trim();
+      
+      // 如果 thinkContent 還沒有這段，就補上去
+      if (!msg.thinkContent) {
+        msg.thinkContent = extractedThink;
+      } else if (!msg.thinkContent.includes(extractedThink)) {
+        msg.thinkContent = (msg.thinkContent + '\n' + extractedThink).trim();
+      }
+    }
+    
+    // 容錯：處理可能還沒閉合的 <think> 或 <thought>（例如串流異常中斷或未完成的情況）
+    const unclosedRegex = /<(think|thought)>([\s\S]*)$/i;
+    const unclosedMatch = unclosedRegex.exec(msg.content);
+    if (unclosedMatch) {
+      const remainingThink = unclosedMatch[2].trim();
+      msg.content = msg.content.replace(unclosedRegex, '').trim();
+      if (!msg.thinkContent) {
+        msg.thinkContent = remainingThink;
+      } else if (!msg.thinkContent.includes(remainingThink)) {
+        msg.thinkContent = (msg.thinkContent + '\n' + remainingThink).trim();
+      }
+    }
+  }
+
   try { msg.htmlContent = marked.parse(msg.content || '') }
   catch { msg.htmlContent = msg.content }
 }

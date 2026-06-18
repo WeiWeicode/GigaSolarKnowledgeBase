@@ -19,6 +19,7 @@ async function seedAiPrompts() {
         temperature: 0.3,
         timeout_ms: 300000,
         is_active: true,
+        ai_tool: 'llama.cpp',
       });
       console.log('✅ Default AI Config seeded.');
     } else {
