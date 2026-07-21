@@ -407,3 +407,42 @@
   - 更新 `updateHtml(msg)` 函式，利用正則表達式自動辨識並過濾正文中的 `<think>...</think>` 及 `<thought>...</thought>`，並將其提取合併至 expandable 的 `thinkContent` 欄位中。
   - 同時加入對未閉合的 `<think>` 與 `<thought>` 標籤（即還在串流或中斷）的容錯處理，將其自 `content` 移除並導入 `thinkContent`，確保渲染出的正文絕對乾淨。
 - **驗證方式**：在對話中刻意模擬含有 `<thought>` 或 `<think>` 的 Markdown，串流完畢後確認主回答區域沒有殘留任何 `<think>` 或 `<thought>` 標籤及其內容，而是整齊被收集在「已完成思考」摺疊區中。
+
+---
+
+### [BUG-029] AI 問答（未指定文章的外部 RAG 問答）回答內容完全空白，只出現在「已完成思考」摺疊區
+- **狀態**：✅ 已修正（2026-07-21），已 `npm run build` 驗證可編譯；**尚未完成登入後的瀏覽器 UI 實測**（見下方「未驗證事項」）
+- **涉及檔案**：`frontend/src/components/panels/AiChatPanel.vue`、`frontend/src/services/AiRAGApi.js`
+- **重現方式**：AI 面板切到「AI 問答」，**不使用 `#` 指定文章**，直接輸入「說明PDF圖片測試」送出（對應知識庫中已上傳的 `PDF圖片測試.pdf`）。此路徑會走 `AiChatPanel.vue` 的 `sendMessage()` → 無 `referencedArticles` 分支 → 呼叫 `sendExternalChat()`（`AiRAGApi.js`），對接外部 AiRAG 服務 `POST /api/external/chat`。
+- **測試方法**：為排除是「前端解析邏輯寫錯」還是「後端回傳資料本身有問題」，直接用 `curl` 對外部 AiRAG API 送出與前端相同的 request body（`search_type: semantic_hybrid`，未帶 `max_tokens`），繞過瀏覽器直接檢視原始 SSE 事件序列。
+- **根本原因**（定位在 AiRAG 服務端／模型層，非前端解析錯誤）：
+  1. 此問題與「帶有知識庫檢索內容（RAG context）」的問題有關。模型收到檢索到的段落後，會先送出一大段 `event: chunk` `type: "reasoning"`（思考過程），內容包含反覆檢視引用段落、草擬答案、二次修正草稿——這段思考本身就會消耗大量 token。
+  2. `params.max_tokens` 若未帶入，依 [EXTERNAL_API_INTEGRATION_GUIDE.md](EXTERNAL_API_INTEGRATION_GUIDE.md) 第 3.2.2 節說明，後端預設值為 `1024`。實測「說明PDF圖片測試」情境下，整段回應在**精準滿 1024 筆** `type: "reasoning"` chunk 時被截斷（`grep -c` 驗證結果剛好等於 1024），接著直接送出 `event: sources` 與 `chunk: {"type":"done"}` 結束連線，**全程沒有出現任何一筆 `type: "content"`**（正式回答）chunk。換句話說：模型的思考過程本身就把 `max_tokens` 額度耗盡，根本還沒開始輸出「正式回答」文字。
+  3. 另外用同帳號測試一個「不帶知識庫、簡短打招呼」的問題作為對照組：思考過程較短（295 筆 reasoning），沒有把額度用完，之後確實正常送出 7 筆 `type: "content"`。證實**不是所有問答都會壞**，而是「檢索到的上下文越多、模型思考鏈越長」的情境才會踩到這個上限。
+  4. `AiChatPanel.vue` 的 `onChunk` 回呼（約第 785-794 行）依文件規格正確地把 `type: "reasoning"` 導向 `aiMsg.thinkContent`（摺疊區）、`type: "content"` 才導向 `aiMsg.content`（正文）。由於本次串流自始至終沒有任何 `content` chunk，`aiMsg.content` 全程是空字串，`onDone()` 呼叫 `updateHtml(aiMsg)` 對空字串執行 `marked.parse('')`，畫面上「正文」自然完全空白——使用者只會看到已展開的「已完成思考」內容，其餘（正文、AI 建議關鍵字區）全部不會出現。**此為前端依照文件規格正確運作下的結果，前端解析程式碼本身沒有邏輯錯誤。**
+  5. **修正驗證**：把同一個「說明PDF圖片測試」request 加上 `params.max_tokens: 4096` 重送，模型思考完後確實接續產生 **358 筆** `type: "content"` chunk，正式回答完整送出（開頭為「《PDF圖片測試.pdf》是一份標註...」）。證實只要提高 `max_tokens`，此情境即可恢復正常。
+- **次要發現（相關但獨立的問題）**：`AiRAGApi.js` 的 `onSources` 回呼有把 `event: sources`（引用來源 `sources` 陣列，見文件 4.5 節）存進 `aiMsg.sources`，但 `AiChatPanel.vue` 的 `<template>` 中**完全沒有任何地方讀取或顯示 `msg.sources`**，等同引用來源資訊目前對使用者永遠不可見，直接被捨棄。
+- **安全性備註（既有程式碼，非本次新增問題）**：`AiRAGApi.js` 的 `DEFAULT_API_KEY` 與 `KNOWLEDGE_BASE_ID` 直接寫死在前端原始碼中，會被打包進瀏覽器可讀取的 JS bundle，任何人打開瀏覽器開發者工具即可取得這把 API Key。檔案內註解本身也寫「未來將支援依部門由資料庫動態帶入」，建議之後改由後端代理呼叫（`backend` 端持有金鑰），前端不直接持有金鑰。
+- **影響範圍**：僅影響 **chat 模式且未使用 `#` 指定文章**（即直接呼叫 `sendExternalChat` 的外部 RAG 問答）情境；有 `#` 指定文章時走 `articleService.getById` + `aiService.streamSummarize`（內部 `/api/ai/*`），「產生文章」「校正文章」走 `aiService.streamWritingAssist`，這兩條路徑本次未測試，是否有相同 `max_tokens` 限制待確認。
+- **確認採用的修改方向（開發者已核准，2026-07-21）**：
+  1. `max_tokens` 提高為 `60000`。
+  2. 加入防禦性 fallback。
+  3. 加入引用來源區塊，且與「思考過程」分離為獨立區塊（不再巢狀於摺疊區內）；UI 設計參考 `AiRAG/frontend/src/components/chat/SourceChunks.vue`、`MessageBubble.vue` 的呈現方式（獨立區塊、逐筆列出檔名/段落/相似度分數/已採納標記），並依本專案既有 Element Plus + CSS variables 風格改寫（非 Tailwind）。
+  4. API Key 改由後端代理呼叫——**本次不實作**，留待未來開發排程。
+- **修正內容**：
+  1. **`AiRAGApi.js`**：`sendExternalChat` 組 request body 時，`params.max_tokens` 未帶入時預設改為 `60000`（原本完全未帶、後端預設吃 `1024`）。呼叫端仍可在 `params.max_tokens` 自行覆蓋。
+  2. **`AiChatPanel.vue`** 新增 `applyEmptyContentFallback(msg)` 共用函式：串流結束時若 `msg.content` 為空但 `msg.thinkContent` 有內容，改寫 `msg.content` 為明確的截斷提示文字（`> ⚠️ AI 回答被截斷，僅產生思考過程，尚未輸出正式回答，請重新提問或縮小問題範圍再試一次。`）並自動展開思考區塊。`sendMessage()` 與 `sendCommand()` 的 `onDone` 皆已呼叫此函式。
+  3. **`AiChatPanel.vue`** `onSources` 回呼改為對每筆 source 補上 `_expanded: false`，供逐筆展開/收合使用。
+  4. **`AiChatPanel.vue`** `<template>` 新增獨立的 `.sources-block`（與 `.think-block` 為同層級的兄弟區塊，非巢狀關係），顯示於正文 Markdown 之後、AI 建議關鍵字區之前：逐筆列出來源檔名（依 `metadata.chunk_type` 顯示 📄 文字／🖼️ 圖片圖示）、段落編號、`已採納`／`未採納`（對應 `metadata.included_in_ai_context`）與相似度分數（`semantic_score` 或 `score`）的 el-tag 標籤；點擊該筆可展開/收合顯示完整片段內容（`source.content`）。新增對應 `.sources-block` / `.source-item` / `.source-row` / `.source-content` 等 scoped CSS，沿用既有 `--color-*` 變數風格。
+  5. `DEFAULT_API_KEY` 改後端代理：本次未變更，維持現狀（前端仍持有金鑰），待後續排程處理。
+- **已完成的驗證**：
+  - `npm run build`：編譯成功，無語法錯誤。
+  - 直接以 `curl` 對外部 AiRAG API 重送「說明PDF圖片測試」並帶 `params.max_tokens: 4096`（模擬修正後行為），確認模型會在思考完後接續產生 `type: "content"` chunk（358 筆），正式回答完整送出，證實提高 `max_tokens` 確實能解決本次的空白回答問題。
+- **未驗證事項（待開發者或後續測試補做）**：
+  - **尚未在登入後的瀏覽器環境實測 UI**：本次修改未執行瀏覽器登入操作（登入頁為 BPM 帳號密碼驗證，AI 助手不會自動輸入密碼進行登入），因此「引用來源區塊」的實際排版、樣式與互動（展開/收合）、以及「防禦性 fallback」文字的實際顯示效果，都尚未經過真人瀏覽器畫面確認，僅完成程式碼邏輯與編譯驗證。
+  - 麻煩開發者實際登入後，在 AI 問答面板輸入「說明PDF圖片測試」（不加 `#` 指定文章），確認：
+    1. 正文區出現完整 Markdown 格式回答（而非只有「已完成思考」摺疊區）。
+    2. 「思考過程」與「參考來源」為兩個各自獨立的區塊（參考來源不會出現在思考摺疊區內）。
+    3. 參考來源區塊逐筆顯示檔名、段落編號、已採納/未採納標記、相似度分數，點擊可展開看到完整片段內容。
+    4. `max_tokens: 60000` 沒有造成串流逾時或後端資源異常（需與 AiRAG 維運人員確認此上限是否合理）。
+    5. 若刻意模擬空白回答情境（例如中途中斷），確認 fallback 提示文字會出現，而非完全空白。

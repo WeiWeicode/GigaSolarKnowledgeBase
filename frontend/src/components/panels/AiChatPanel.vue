@@ -60,6 +60,43 @@
               <div v-else class="msg-content markdown-body" v-html="msg.htmlContent || msg.content" />
               <span v-if="msg.streaming" class="typing-cursor">▊</span>
 
+              <!-- 引用來源（獨立區塊，與上方「思考過程」摺疊區分開顯示） -->
+              <div
+                v-if="msg.role === 'ai' && !msg.streaming && msg.sources?.length"
+                class="sources-block"
+              >
+                <div class="sources-header">
+                  <el-icon><Document /></el-icon>
+                  參考來源（{{ msg.sources.length }}）
+                </div>
+                <div
+                  v-for="(src, idx) in msg.sources"
+                  :key="src.chunk_id || idx"
+                  class="source-item"
+                  @click="src._expanded = !src._expanded"
+                >
+                  <div class="source-row">
+                    <span class="source-name">
+                      {{ src.metadata?.chunk_type === 'image' ? '🖼️' : '📄' }}
+                      {{ src.metadata?.filename || '未知檔案' }}
+                      <span class="source-chunk-idx">#{{ src.metadata?.chunk_index ?? src.chunk_index ?? '?' }}</span>
+                    </span>
+                    <span class="source-badges">
+                      <el-tag
+                        size="small"
+                        :type="src.metadata?.included_in_ai_context === false ? 'info' : 'success'"
+                        effect="plain"
+                      >{{ src.metadata?.included_in_ai_context === false ? '未採納' : '已採納' }}</el-tag>
+                      <el-tag size="small" type="primary" effect="plain">
+                        相似度 {{ (src.semantic_score ?? src.score ?? 0).toFixed(2) }}
+                      </el-tag>
+                      <span class="source-chevron">{{ src._expanded ? '▲' : '▼' }}</span>
+                    </span>
+                  </div>
+                  <div v-show="src._expanded" class="source-content">{{ src.content || '無內容' }}</div>
+                </div>
+              </div>
+
               <!-- 標籤區（chat 模式）：文章現有標籤 + AI 建議新增 -->
               <div
                 v-if="msg.role === 'ai' && !msg.streaming && (msg.keywords?.length || contextTags?.length)"
@@ -229,6 +266,7 @@ import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { marked } from 'marked'
 import { aiService, articleService, crossDeptService } from '@/services/api.js'
+import { sendExternalChat } from '@/services/AiRAGApi.js'
 import { useDirectoryStore } from '@/store/directory.js'
 import { useAuthStore } from '@/store/auth.js'
 
@@ -575,6 +613,16 @@ function updateHtml(msg) {
   catch { msg.htmlContent = msg.content }
 }
 
+// ── 防禦機制：串流正常結束但正文為空時的 fallback ──────────────
+// 對應情境：知識庫檢索問答時，模型思考過程（reasoning）可能耗盡 max_tokens
+// 額度，導致串流結束前從未送出正式回答（content），畫面會呈現完全空白。
+function applyEmptyContentFallback(msg) {
+  if (!msg.content?.trim() && msg.thinkContent?.trim()) {
+    msg.content = '> ⚠️ AI 回答被截斷，僅產生思考過程，尚未輸出正式回答，請重新提問或縮小問題範圍再試一次。'
+    msg.thinkExpanded = true
+  }
+}
+
 async function scrollToBottom() {
   await nextTick()
   if (messageArea.value) messageArea.value.scrollTop = messageArea.value.scrollHeight
@@ -615,6 +663,7 @@ async function sendCommand(cmdKey) {
   }
   const onDone  = async () => {
     aiMsg.thinkStreaming = false
+    applyEmptyContentFallback(aiMsg)
     updateHtml(aiMsg)
     await nextTick()
     aiMsg.streaming = false
@@ -705,6 +754,7 @@ async function sendMessage() {
   const onDone  = async () => {
     // 串流結束：先轉換 Markdown HTML，下一 tick 才切換顯示模式避免閃爍
     aiMsg.thinkStreaming = false
+    applyEmptyContentFallback(aiMsg)
     updateHtml(aiMsg)
     await nextTick()
     aiMsg.streaming = false
@@ -730,24 +780,90 @@ async function sendMessage() {
     const signal    = abortController.signal
 
     if (currentMode.value === 'chat') {
-      // 組合 prompt：使用者問題 + 指定文章內容 + 當前文章內文
-      let articleContext = ''
-      if (capturedRefs.length) {
+      if (capturedRefs.length > 0) {
+        // 組合 prompt：使用者問題 + 指定文章內容 + 當前文章內文
         const fetched = await Promise.allSettled(
           capturedRefs.map(a => articleService.getById(a.id)),
         )
-        articleContext = fetched
+        const articleContext = fetched
           .filter(r => r.status === 'fulfilled')
           .map(r => `\n\n---\n📄 指定文章「${r.value.title}」：\n${r.value.content || ''}`)
           .join('')
+
+        const contextPart = useContext.value && props.contextContent
+          ? `\n\n---\n文章內文：\n${props.contextContent}`
+          : ''
+
+        const fullContent = (capturedInput || '請分析以上文章內容') + articleContext + contextPart
+        await aiService.streamSummarize(fullContent, { onThinking, onDelta, onDone, onError }, signal)
+
+      } else {
+        // 無 # 指定文章：直接呼叫 AiRAGApi 進行外部問答
+        const user = authStore.user || {}
+        const externalUser = {
+          employee_id: user.員工工號 || 'SYSTEM',
+          name: user.員工姓名 || '使用者',
+          department_code: user.部門代碼 || '',
+          department_name: user.部門名稱 || '',
+          job_title_name: user.職務名稱 || user.級職名稱 || '專員',
+          job_title_level: Number(user.級職 ?? user.級職等級 ?? 10),
+        }
+
+        const contextPart = useContext.value && props.contextContent
+          ? `\n\n---\n目前參考文章內容：\n${props.contextContent}`
+          : ''
+        const question = (capturedInput || '請解答以下問題') + contextPart
+
+        await sendExternalChat(
+          {
+            question,
+            externalUser,
+            params: {
+              search_type: 'semantic_hybrid',
+            },
+          },
+          {
+            signal,
+            onStep: (stepData) => {
+              if (stepData.content) {
+                aiMsg.thinkContent += (aiMsg.thinkContent ? '\n' : '') + `[進度] ${stepData.content}`
+                aiMsg.thinkStreaming = true
+                scrollToBottom()
+              }
+            },
+            onChunk: (chunkData) => {
+              if (chunkData.type === 'reasoning' && chunkData.content) {
+                aiMsg.thinkContent += chunkData.content
+                aiMsg.thinkStreaming = true
+                scrollToBottom()
+              } else if (chunkData.type === 'content' && chunkData.content) {
+                aiMsg.thinkStreaming = false
+                aiMsg.content += chunkData.content
+                scrollToBottom()
+              }
+            },
+            onMessage: (msgData) => {
+              aiMsg.thinkStreaming = false
+              if (msgData.delta) {
+                aiMsg.content = msgData.delta
+                scrollToBottom()
+              }
+            },
+            onSources: (sourcesData) => {
+              if (sourcesData.sources?.length) {
+                // 補上 _expanded 供引用區塊逐筆展開/收合使用
+                aiMsg.sources = sourcesData.sources.map(s => ({ ...s, _expanded: false }))
+              }
+            },
+            onError: async (err) => {
+              await onError()
+            },
+            onDone: async () => {
+              await onDone()
+            },
+          }
+        )
       }
-
-      const contextPart = useContext.value && props.contextContent
-        ? `\n\n---\n文章內文：\n${props.contextContent}`
-        : ''
-
-      const fullContent = (capturedInput || '請分析以上文章內容') + articleContext + contextPart
-      await aiService.streamSummarize(fullContent, { onThinking, onDelta, onDone, onError }, signal)
 
     } else if (capturedFile) {
       const fd = new FormData()
@@ -935,6 +1051,46 @@ async function sendMessage() {
   max-height: 200px;
   overflow-y: auto;
   background: rgba(255,255,255,.5);
+}
+
+/* Sources block（引用來源，獨立於 think-block） */
+.sources-block {
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--color-border);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.sources-header {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 600; color: var(--color-text-muted);
+}
+.source-item {
+  border: 1px solid var(--color-border); border-radius: 8px;
+  background: var(--color-surface); cursor: pointer;
+  transition: background var(--transition);
+  overflow: hidden;
+}
+.source-item:hover { background: var(--color-surface-2); }
+.source-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 6px 10px;
+}
+.source-name {
+  font-size: 12px; color: var(--color-text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
+}
+.source-chunk-idx { color: var(--color-text-muted); font-size: 11px; }
+.source-badges { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.source-chevron { font-size: 10px; color: var(--color-text-muted); }
+.source-content {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-top: 1px solid var(--color-border);
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--color-surface-2);
 }
 
 /* Keyword area */
