@@ -1,7 +1,8 @@
 const { Router } = require('express');
 const multer     = require('multer');
 const { authMiddleware }           = require('../middlewares/auth');
-const { summarize, writingAssist } = require('../controllers/aiController');
+const { summarize, writingAssist, getAiConfig } = require('../controllers/aiController');
+const { SYNCABLE_MIME_TYPES }      = require('../helpers/fileTypeHelper');
 
 const router = Router();
 
@@ -9,12 +10,7 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits:  { fileSize: 5 * 1024 * 1024 }, // 5 MB
   fileFilter: (req, file, cb) => {
-    const allowed = [
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/pdf',
-    ];
-    if (allowed.includes(file.mimetype)) {
+    if (SYNCABLE_MIME_TYPES.includes(file.mimetype)) {
       cb(null, true);
     } else {
       cb(new Error('僅接受 .doc、.docx 或 .pdf 格式的檔案'));
@@ -34,7 +30,9 @@ function handleUploadError(err, req, res, next) {
   next();
 }
 
+router.get('/config',          authMiddleware, getAiConfig);
 router.post('/summarize',      authMiddleware, summarize);
 router.post('/writing-assist', authMiddleware, upload.single('file'), handleUploadError, writingAssist);
 
 module.exports = router;
+

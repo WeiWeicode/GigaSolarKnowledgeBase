@@ -167,6 +167,153 @@
           <p class="storage-hint">備份策略由維運團隊自行設定</p>
         </div>
       </el-tab-pane>
+
+      <!-- RAG Sync Schedule -->
+      <el-tab-pane label="RAG 同步排程" name="ragSchedule">
+        <div class="kb-card tab-card" v-loading="ragConfigLoading">
+          <h3 class="card-title">排程設定</h3>
+          <div class="field-group">
+            <label class="field-label">Cron 表達式</label>
+            <el-input v-model="ragConfig.cronExpression" placeholder="0 * * * *" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">啟用排程</label>
+            <el-switch v-model="ragConfig.isEnabled" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">單次批次筆數</label>
+            <el-input-number v-model="ragConfig.batchSize" :min="1" :max="200" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">上次執行摘要</label>
+            <p class="storage-hint">
+              {{ ragConfig.lastRunAt ? new Date(ragConfig.lastRunAt).toLocaleString() : '尚未執行' }}
+              <template v-if="ragConfig.lastRunSummary">
+                — 檢查 {{ ragConfig.lastRunSummary.checked ?? 0 }} 筆，
+                觸發 {{ ragConfig.lastRunSummary.triggered ?? 0 }} 筆，
+                失敗 {{ ragConfig.lastRunSummary.failed ?? 0 }} 筆
+              </template>
+            </p>
+          </div>
+          <el-button type="primary" :loading="ragConfigSaving" @click="saveRagConfig">儲存排程設定</el-button>
+        </div>
+      </el-tab-pane>
+
+      <!-- RAG Sync Status -->
+      <el-tab-pane label="RAG 同步比對" name="ragStatus">
+        <div class="kb-card tab-card">
+          <h3 class="card-title">同步狀態列表</h3>
+          <div class="rag-filter-bar">
+            <el-select v-model="ragStatusFilter.status" placeholder="狀態" clearable style="width:140px" @change="loadRagStatusList">
+              <el-option label="未同步" value="not_synced" />
+              <el-option label="已過期" value="outdated" />
+              <el-option label="處理中" value="processing" />
+              <el-option label="已完成" value="completed" />
+              <el-option label="失敗" value="failed" />
+              <el-option label="下架未刪除" value="unpublished_kept" />
+              <el-option label="下架已刪除" value="unpublished_deleted" />
+            </el-select>
+            <el-select v-model="ragStatusFilter.sourceType" placeholder="類型" clearable style="width:120px" @change="loadRagStatusList">
+              <el-option label="文章" value="article" />
+              <el-option label="附件檔案" value="attachment_file" />
+            </el-select>
+            <el-input
+              v-model="ragStatusFilter.keyword" placeholder="搜尋標題/檔名" style="width:200px" clearable
+              @keydown.enter="loadRagStatusList" @clear="loadRagStatusList"
+            />
+            <el-button @click="loadRagStatusList">查詢</el-button>
+            <el-button type="warning" plain :disabled="!ragStatusSelection.length" @click="executeRagStatusManual">
+              指定執行切分
+            </el-button>
+            <el-button type="primary" plain :loading="ragAuditRunning" @click="runRagAudit">全量校驗</el-button>
+          </div>
+
+          <el-table
+            :data="ragStatusList" size="small" border v-loading="ragStatusLoading"
+            @selection-change="handleRagStatusSelectionChange"
+          >
+            <el-table-column type="selection" width="45" />
+            <el-table-column label="類型" width="90">
+              <template #default="{ row }">{{ ragSourceTypeLabel(row.sourceType) }}</template>
+            </el-table-column>
+            <el-table-column prop="title" label="標題 / 檔名" show-overflow-tooltip />
+            <el-table-column label="狀態" width="110">
+              <template #default="{ row }">
+                <el-tag size="small" :type="ragStatusTagType(row.status)">{{ ragStatusLabel(row.status) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="目標版本" prop="targetVersion" width="90" />
+            <el-table-column label="最後檢查時間" width="160">
+              <template #default="{ row }">{{ row.lastCheckedAt ? new Date(row.lastCheckedAt).toLocaleString() : '—' }}</template>
+            </el-table-column>
+            <el-table-column label="錯誤訊息" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.errorMessage || '—' }}</template>
+            </el-table-column>
+          </el-table>
+
+          <el-pagination
+            class="rag-pagination"
+            background layout="prev, pager, next, total"
+            v-model:current-page="ragStatusPage"
+            v-model:page-size="ragStatusPageSize"
+            :total="ragStatusTotal"
+            @current-change="loadRagStatusList"
+          />
+        </div>
+      </el-tab-pane>
+
+      <!-- RAG Sync Logs -->
+      <el-tab-pane label="RAG 同步日誌" name="ragLogs">
+        <div class="kb-card tab-card">
+          <h3 class="card-title">錯誤 / 事件日誌</h3>
+          <div class="rag-filter-bar">
+            <el-select v-model="ragLogFilter.stage" placeholder="階段" clearable style="width:170px" @change="loadRagLogs">
+              <el-option label="比對 (compare)" value="compare" />
+              <el-option label="通知 (notify)" value="notify" />
+              <el-option label="拉取內容 (fetch_content)" value="fetch_content" />
+              <el-option label="切分 (chunking)" value="chunking" />
+              <el-option label="Embedding" value="embedding" />
+              <el-option label="Qdrant 寫入" value="qdrant_upsert" />
+            </el-select>
+            <el-select v-model="ragLogFilter.level" placeholder="等級" clearable style="width:110px" @change="loadRagLogs">
+              <el-option label="Info" value="info" />
+              <el-option label="Warning" value="warning" />
+              <el-option label="Error" value="error" />
+            </el-select>
+            <el-button @click="loadRagLogs">查詢</el-button>
+          </div>
+
+          <el-table :data="ragLogList" size="small" border v-loading="ragLogLoading">
+            <el-table-column label="時間" width="160">
+              <template #default="{ row }">{{ row.occurredAt ? new Date(row.occurredAt).toLocaleString() : '—' }}</template>
+            </el-table-column>
+            <el-table-column label="來源" width="150">
+              <template #default="{ row }">
+                <span v-if="row.sourceType">{{ ragSourceTypeLabel(row.sourceType) }} #{{ row.sourceId }}</span>
+                <span v-else>—</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="stage" label="階段" width="130" />
+            <el-table-column label="等級" width="90">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.level === 'error' ? 'danger' : (row.level === 'warning' ? 'warning' : 'info')">
+                  {{ row.level }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="message" label="訊息" show-overflow-tooltip />
+          </el-table>
+
+          <el-pagination
+            class="rag-pagination"
+            background layout="prev, pager, next, total"
+            v-model:current-page="ragLogPage"
+            v-model:page-size="ragLogPageSize"
+            :total="ragLogTotal"
+            @current-change="loadRagLogs"
+          />
+        </div>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 新增標籤 Dialog -->
@@ -187,8 +334,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { metaService, tagService, colleagueService } from '@/services/api.js'
+import { ref, reactive, onMounted } from 'vue'
+import { metaService, tagService, colleagueService, ragSyncService } from '@/services/api.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const activeTab   = ref('company')
@@ -215,6 +362,35 @@ const aiConfig = ref({
   systemPrompt: '你是集團知識庫的 AI 助手，請以繁體中文回答，並根據所給的文章內容提供準確的資訊。',
   // TODO: 後端補 GET/PATCH /api/v1/admin/ai-config 端點
 })
+
+// ── RAG 同步排程 ─────────────────────────────────────────────
+const ragConfig = reactive({
+  cronExpression: '0 * * * *',
+  isEnabled: true,
+  batchSize: 20,
+  lastRunAt: null,
+  lastRunSummary: null,
+})
+const ragConfigLoading = ref(false)
+const ragConfigSaving  = ref(false)
+
+// ── RAG 同步比對 ─────────────────────────────────────────────
+const ragStatusList      = ref([])
+const ragStatusTotal     = ref(0)
+const ragStatusPage      = ref(1)
+const ragStatusPageSize  = ref(20)
+const ragStatusLoading   = ref(false)
+const ragStatusFilter    = reactive({ status: '', sourceType: '', keyword: '' })
+const ragStatusSelection = ref([])
+const ragAuditRunning    = ref(false)
+
+// ── RAG 同步日誌 ─────────────────────────────────────────────
+const ragLogList     = ref([])
+const ragLogTotal    = ref(0)
+const ragLogPage     = ref(1)
+const ragLogPageSize = ref(20)
+const ragLogLoading  = ref(false)
+const ragLogFilter   = reactive({ stage: '', level: '' })
 
 // ── Helpers ──────────────────────────────────────────────────
 function roleLabel(r) { return { ADMIN: '管理員', MANAGER: '主管', MEMBER: '同仁', GUEST: '訪客' }[r] || r }
@@ -273,6 +449,123 @@ function saveAiConfig() {
   ElMessage.warning('AI 設定儲存功能建置中，尚未串接後端')
 }
 
+// ── RAG 同步：狀態顯示輔助 ───────────────────────────────────
+function ragStatusLabel(status) {
+  return {
+    not_synced: '未同步', outdated: '已過期', processing: '處理中',
+    completed: '已完成', failed: '失敗',
+    unpublished_kept: '下架未刪除', unpublished_deleted: '下架已刪除',
+  }[status] || status
+}
+function ragStatusTagType(status) {
+  return {
+    completed: 'success', processing: 'primary', not_synced: 'info',
+    outdated: 'warning', failed: 'danger',
+    unpublished_kept: 'info', unpublished_deleted: 'info',
+  }[status] || 'info'
+}
+function ragSourceTypeLabel(type) {
+  return type === 'article' ? '文章' : '附件檔案'
+}
+
+// ── RAG 同步排程 ─────────────────────────────────────────────
+async function loadRagConfig() {
+  ragConfigLoading.value = true
+  try {
+    const cfg = await ragSyncService.getConfig()
+    Object.assign(ragConfig, cfg)
+  } catch (e) {
+    ElMessage.error('排程設定載入失敗：' + (e.message || ''))
+  } finally {
+    ragConfigLoading.value = false
+  }
+}
+
+async function saveRagConfig() {
+  ragConfigSaving.value = true
+  try {
+    await ragSyncService.updateConfig({
+      cronExpression: ragConfig.cronExpression,
+      isEnabled:      ragConfig.isEnabled,
+      batchSize:       ragConfig.batchSize,
+    })
+    ElMessage.success('排程設定已儲存')
+    await loadRagConfig()
+  } catch (e) {
+    ElMessage.error('儲存失敗：' + (e.message || ''))
+  } finally {
+    ragConfigSaving.value = false
+  }
+}
+
+// ── RAG 同步比對 ─────────────────────────────────────────────
+async function loadRagStatusList() {
+  ragStatusLoading.value = true
+  try {
+    const res = await ragSyncService.getStatusList({
+      page:       ragStatusPage.value,
+      pageSize:   ragStatusPageSize.value,
+      status:     ragStatusFilter.status || undefined,
+      sourceType: ragStatusFilter.sourceType || undefined,
+      keyword:    ragStatusFilter.keyword || undefined,
+    })
+    ragStatusList.value  = res.items
+    ragStatusTotal.value = res.total
+  } catch (e) {
+    ElMessage.error('比對狀態列表載入失敗：' + (e.message || ''))
+  } finally {
+    ragStatusLoading.value = false
+  }
+}
+
+function handleRagStatusSelectionChange(rows) {
+  ragStatusSelection.value = rows
+}
+
+async function executeRagStatusManual() {
+  if (!ragStatusSelection.value.length) return ElMessage.warning('請先勾選項目')
+  try {
+    await ragSyncService.executeManual(
+      ragStatusSelection.value.map(r => ({ sourceType: r.sourceType, sourceId: r.sourceId }))
+    )
+    ElMessage.success('已送出重新執行請求')
+    await loadRagStatusList()
+  } catch (e) {
+    ElMessage.error('執行失敗：' + (e.message || ''))
+  }
+}
+
+async function runRagAudit() {
+  ragAuditRunning.value = true
+  try {
+    await ragSyncService.runAudit()
+    ElMessage.success('全量校驗已開始執行，完成後可重新查詢比對列表查看結果')
+  } catch (e) {
+    ElMessage.error('觸發全量校驗失敗：' + (e.message || ''))
+  } finally {
+    ragAuditRunning.value = false
+  }
+}
+
+// ── RAG 同步日誌 ─────────────────────────────────────────────
+async function loadRagLogs() {
+  ragLogLoading.value = true
+  try {
+    const res = await ragSyncService.getLogs({
+      page:     ragLogPage.value,
+      pageSize: ragLogPageSize.value,
+      stage:    ragLogFilter.stage || undefined,
+      level:    ragLogFilter.level || undefined,
+    })
+    ragLogList.value  = res.items
+    ragLogTotal.value = res.total
+  } catch (e) {
+    ElMessage.error('同步日誌載入失敗：' + (e.message || ''))
+  } finally {
+    ragLogLoading.value = false
+  }
+}
+
 // ── 初始化 ──────────────────────────────────────────────────
 onMounted(async () => {
   try {
@@ -297,6 +590,10 @@ onMounted(async () => {
   } finally {
     usersLoading.value = false
   }
+
+  await loadRagConfig()
+  await loadRagStatusList()
+  await loadRagLogs()
 })
 </script>
 
@@ -327,4 +624,7 @@ onMounted(async () => {
 .stat-label { font-size: 12px; color: var(--color-text-muted); }
 .stat-value { font-size: 22px; font-weight: 700; color: var(--color-text-primary); }
 .storage-hint { font-size: 12px; color: var(--color-text-muted); }
+
+.rag-filter-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+.rag-pagination { margin-top: 16px; justify-content: flex-end; }
 </style>

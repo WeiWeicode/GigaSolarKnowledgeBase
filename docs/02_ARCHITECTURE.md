@@ -112,6 +112,14 @@ sequenceDiagram
 - **模型配置**：Ollama 部署於專屬 AI 主機，Node.js 負責轉發請求，預設模型為 `qwen3.6:35b`。
 - **非同步 Embedding**：文章儲存後，Node.js 於背景呼叫 Embedding 模型，並更新 SQL Server 紀錄。
 
+### 5.1 KB 文件向量同步（RAG Sync）
+
+除上述即時問答外，KB 另建有獨立的**向量同步機制**，將已上架文章/PDF/Word 附件送進外部 **AiRAG**（獨立 Python FastAPI 專案）切分、embedding 後寫入 **Qdrant** 向量庫，並以排程比對 KB DB 與 Qdrant 的落差。詳細流程、資料表與 API 契約見 [docs/DevelopmentProcess/RAG_SYNC_PLAN.md](DevelopmentProcess/RAG_SYNC_PLAN.md)。重點：
+
+- KB 後端新增 `rag_sync_status`/`rag_sync_config`/`rag_sync_logs` 三張表，`node-cron` 排程 + 文章/附件 CRUD 異動即時通知雙軌驅動。
+- KB 後端透過 `services/aiRagIngestClient.js` 呼叫 AiRAG 觸發端點，透過 `services/qdrantService.js` 直連 Qdrant 做比對/刪除；AiRAG 則反向呼叫 KB 的 `/api/v1/rag-sync-content/*` 端點拉取原始內容。
+- 管理介面（`AdminView.vue` 同步排程 / 同步比對 / 同步日誌）與文章/附件詳情頁的同步狀態徽章供人工監控與手動重試。
+
 ## 6. 安全性與身分驗證 (Security & Auth)
 
 - **無密碼登入**：直接使用 BPM API 驗證，系統內部不儲存密碼。

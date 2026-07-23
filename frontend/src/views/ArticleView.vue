@@ -206,6 +206,11 @@
           <el-descriptions-item label="文件上架">
             <el-tag :type="form.isPublished ? 'success' : 'info'" size="small">{{ form.isPublished ? '已上架' : '已下架' }}</el-tag>
           </el-descriptions-item>
+          <el-descriptions-item label="RAG 同步狀態">
+            <el-tag size="small" :type="ragStatusTagType(article?.ragSyncStatus?.status)">
+              {{ ragStatusLabel(article?.ragSyncStatus?.status) }}
+            </el-tag>
+          </el-descriptions-item>
           <el-descriptions-item label="是否公開">
             <el-tag :type="form.isPublic ? 'warning' : 'info'" size="small">{{ form.isPublic ? '全集團公開' : '部門私有' }}</el-tag>
           </el-descriptions-item>
@@ -369,6 +374,22 @@ const GRADE_OPTIONS = [
 ]
 function gradeLevelLabel(v) {
   return GRADE_OPTIONS.find(o => o.value === v)?.label ?? `職級 ${v} 以上`
+}
+
+// RAG 同步狀態顯示（見 docs/DevelopmentProcess/RAG_SYNC_PLAN.md 3.1.1 節狀態機）
+function ragStatusLabel(status) {
+  return {
+    not_synced: '未同步', outdated: '已過期', processing: '處理中',
+    completed: '已完成', failed: '失敗',
+    unpublished_kept: '下架未刪除', unpublished_deleted: '下架已刪除',
+  }[status] || '未同步'
+}
+function ragStatusTagType(status) {
+  return {
+    completed: 'success', processing: 'primary', not_synced: 'info',
+    outdated: 'warning', failed: 'danger',
+    unpublished_kept: 'info', unpublished_deleted: 'info',
+  }[status] || 'info'
 }
 
 const form = reactive({

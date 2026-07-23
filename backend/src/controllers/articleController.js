@@ -7,6 +7,7 @@ const {
 } = require('../models');
 const { canAccess } = require('../helpers/accessHelper');
 const { Op } = require('sequelize');
+const ragSyncService = require('../services/ragSyncService');
 
 /**
  * 取得使用者的跨部門授權代碼清單
@@ -86,6 +87,9 @@ async function getAllArticles(req, res) {
 
     filtered.forEach(a => a.setDataValue('directoryIds', dirMap[a.id] || []));
 
+    const ragStatusMap = await ragSyncService.getStatusMap('article', articleIds);
+    filtered.forEach(a => a.setDataValue('ragSyncStatus', ragStatusMap[a.id] || null));
+
     return res.json({ success: true, data: filtered });
   } catch (error) {
     console.error('getAllArticles error:', error.message);
@@ -145,6 +149,9 @@ async function getArticleById(req, res) {
     // BUG-006: 補上關聯附件 id 陣列
     const linkedAttachments = await article.getAttachments({ attributes: ['id'] });
     article.setDataValue('attachmentIds', linkedAttachments.map(a => a.id));
+
+    const ragStatusMap = await ragSyncService.getStatusMap('article', [article.id]);
+    article.setDataValue('ragSyncStatus', ragStatusMap[article.id] || null);
 
     return res.json({ success: true, data: article });
   } catch (error) {
@@ -289,6 +296,10 @@ async function createArticle(req, res) {
     }
 
     await t.commit();
+
+    ragSyncService.notifyChanged('article', article.id, 'upsert')
+      .catch(err => console.error('RAG sync notify failed:', err.message));
+
     return res.status(201).json({ success: true, data: article });
   } catch (error) {
     // 先記錄原始錯誤，再安全 rollback（MSSQL 自動回滾後再呼叫 ROLLBACK 會拋 error 3903）
@@ -419,6 +430,10 @@ async function updateArticle(req, res) {
     }
 
     await t.commit();
+
+    ragSyncService.notifyChanged('article', article.id, 'upsert')
+      .catch(err => console.error('RAG sync notify failed:', err.message));
+
     return res.json({ success: true, data: article });
   } catch (error) {
     console.error('updateArticle error:', error.message);

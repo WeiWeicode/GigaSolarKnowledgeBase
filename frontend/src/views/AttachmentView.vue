@@ -266,6 +266,9 @@
               <el-tag size="small" type="info" effect="plain" class="file-version-tag">
                 v{{ f.versionNumber || 1 }}
               </el-tag>
+              <el-tag v-if="isSyncableFile(f)" size="small" :type="ragStatusTagType(f.ragSyncStatus?.status)">
+                {{ ragStatusLabel(f.ragSyncStatus?.status) }}
+              </el-tag>
               <span class="file-size">{{ formatFileSize(f.size) }}</span>
             </div>
             <el-button size="small" type="primary" plain @click="handleDownload(f)">下載</el-button>
@@ -375,6 +378,30 @@ const GRADE_OPTIONS = [
 ]
 function gradeLevelLabel(v) {
   return GRADE_OPTIONS.find(o => o.value === v)?.label ?? `職級 ${v} 以上`
+}
+
+// RAG 同步狀態顯示（僅 PDF/Word 檔案會被送進 RAG 切分，見 docs/DevelopmentProcess/RAG_SYNC_PLAN.md）
+const SYNCABLE_MIME_TYPES = [
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/pdf',
+]
+function isSyncableFile(f) {
+  return SYNCABLE_MIME_TYPES.includes(f.mimeType)
+}
+function ragStatusLabel(status) {
+  return {
+    not_synced: '未同步', outdated: '已過期', processing: '處理中',
+    completed: '已完成', failed: '失敗',
+    unpublished_kept: '下架未刪除', unpublished_deleted: '下架已刪除',
+  }[status] || '未同步'
+}
+function ragStatusTagType(status) {
+  return {
+    completed: 'success', processing: 'primary', not_synced: 'info',
+    outdated: 'warning', failed: 'danger',
+    unpublished_kept: 'info', unpublished_deleted: 'info',
+  }[status] || 'info'
 }
 
 const form = reactive({

@@ -2,9 +2,17 @@
 
 ## 0. 文件資訊
 
-- **狀態**：待規劃（本文件為規劃文件，尚未開始實作）
+- **狀態**：KB ↔ AiRAG ↔ Qdrant 端到端已實測成功（2026-07-23，見 v1.6）。KB 端（前端 + 後端）施作完成（TASK-S1～S9、TASK-F1～F3、TASK-D1），AiRAG 端 `POST /api/external/ingest/trigger`、App Registry、內容拉取、Qdrant 寫入、`direct_db` 進度回報全部驗證可正常運作。剩餘技術債見 9 節第 6 項（AiRAG 直連 KB DB 暫用 `sa` 帳號）。
 - **建立日期**：2026-07-23
 - **修訂記錄**：
+  - v1.6（2026-07-23）KB ↔ AiRAG ↔ Qdrant 端到端連通測試，過程中發現並修正 5 處雙方組態落差：
+    1. KB 端 `AIRAG_BASE_URL` 若帶結尾斜線會讓組出的觸發路徑變成 `//api/...` 而 404，`aiRagIngestClient.js` 補上去除結尾斜線的防呆。
+    2. KB 端文章/附件的 `access_members` 部分舊資料曾被重複 `JSON.stringify`，導致取出仍是字串（如 `"[]"`）而非陣列，AiRAG 端 pydantic schema 要求陣列會 422；新增 `accessHelper.js` 的 `normalizeAccessMembers()`，`ragSyncService.js` 與內容端點皆已套用。
+    3. AiRAG 端 MongoDB 原本完全沒有 `app_id="kb"` 的 App Registry 登錄（只有測試用 `bpm_test`），已補登（`base_url`、`article/{id}`、`attachment-file/{id}` 路徑樣板、`report_mode="direct_db"`）。
+    4. AiRAG 端 `AIRAG_INGEST_API_KEY` 驗證的是 MongoDB `external_api_keys` collection 的 bcrypt hash，非單純環境變數比對；已用該金鑰明碼建立對應的 `scope="ingest"` 金鑰紀錄。
+    5. AiRAG 的 `worker`/`backend` container 用 bind mount 讀 `.env`（非 `env_file:` 注入），新增/修改變數後仍需重啟 container 才會重新 `load_dotenv()`；且 container 內只安裝 FreeTDS（`/etc/odbcinst.ini` 僅註冊 `[FreeTDS]`），`direct_db` 回報用的 `KB_DB_CONNECTION_STRING` 需用 `DRIVER={FreeTDS}` 而非 `DRIVER={ODBC Driver 17 for SQL Server}`（後者在 container 內找不到會報 file not found）。
+    完成上述修正後，以 KB 文章 id=32 實測：`notifyChanged` → AiRAG 觸發（202）→ 背景任務抓取 KB 內容 → 切分/embedding → 寫入 Qdrant（含刪除舊 66 點再重新 upsert 66 點的清理邏輯）→ AiRAG 直連 KB DB 回報 → KB `rag_sync_status` 正確轉為 `status='completed', progress=100, last_synced_version=3`，全流程無需人工介入。⚠️ 本次為求快速打通，AiRAG 端 `KB_DB_CONNECTION_STRING` 暫時沿用 `SQLSERVER_CONNECTION_STRING` 同一組 `sa` 帳號，未依 6.4 節建議建立最小權限受限帳號，見 9 節第 6 項技術債。
+  - v1.5（2026-07-23）KB 端施作完成：三張表 / `qdrantService.js` / `aiRagIngestClient.js` / `ragSyncService.js` / 內容端點 / 管理端 API / 排程 / 文章與附件 CRUD 串接（後端）；`ragSyncService`（api.js）/ `AdminView.vue` 三個新 tab / `ArticleView.vue`、`AttachmentView.vue` 同步狀態徽章（前端）；`docs/04_DB_SCHEMA.md`、`docs/03_API_CONTRACT.md` 已補上新表與新端點。已用真實 KB DB 資料驗證：內容端點的 `is_published` 檢查、`X-RAG-Sync-Key` 驗證、`notifyChanged`/`runScheduledCheck`/`runFullAudit`/`executeManual` 皆能正確寫入 `rag_sync_status`/`rag_sync_logs`，並在 AiRAG 端點與 Qdrant 憑證尚未就緒時正確捕捉失敗、不影響文章/附件既有 CRUD 流程。尚未能驗證的部分：AiRAG 實際觸發切分與 Qdrant 實際寫入/查詢（等待 AiRAG 端開放端點與使用者提供 Qdrant 憑證）。
   - v1.4（2026-07-23）依 `MULTI_APP_RAG_SYNC_PLAN.md` v1.2 對齊稽核結果修正 3 處欄位/Header 落差：1) 4.4 節 `article/:id` 回應補上 `appId`/`docType`/`sourceId`，`versionNumber` 更名為 `version`（對齊 MULTI_APP 2.2 節契約，本端點尚未實作，改名零成本）；2) 4.4 節 `attachment-file/:id` 回應 Header 補上 `X-Doc-App-Id`；3) 6 節第 4 點 Qdrant payload 需求清單補上 `app_id`（由 AiRAG 依觸發請求的 `appId` 自動寫入，KB 端不需額外處理）。另於 6 節第 2 點註記：本文件的 `article/:id`、`attachment-file/:id` 路徑已於 AiRAG 端「App Registry」（見 `MULTI_APP_RAG_SYNC_PLAN.md` 2.4 節）原樣登錄，不需要改成通用路徑命名。上一版遺留的 `doc_type`/`docType` 命名風格差異，已於 `MULTI_APP_RAG_SYNC_PLAN.md` 2026-07-23 決策中確認為刻意設計（HTTP 傳輸層 camelCase、Qdrant payload snake_case，AiRAG 內部轉換），非待修正項目。
   - v1.3（2026-07-23）檢查 v1.2 對齊結果，修正 3 處遺漏：1) `AIRAG_BASE_URL` 範例改為不含 `/api` 後綴，避免與 v1.2 新路徑 `POST /api/external/ingest/trigger` 疊加成 `/api/api/...`；2) 新增 `AIRAG_KNOWLEDGE_BASE_ID` 環境變數，補上 v1.2 payload 新欄位 `knowledgeBaseId` 原本未定義的來源；3) 2.1 節排程建立缺漏列時補上同步寫入 `title`。另將 `MULTI_APP_RAG_SYNC_PLAN.md` 的連結改為純文字說明（該檔案不在本 repo 內，原連結為死連結）。`doc_type`/`source_id`（Qdrant point payload，見 6 節第 4 點）與 `docType`/`sourceId`（觸發請求，見 6 節第 1 點）命名風格不一致，待與 AiRAG 端確認是否也要統一，暫不強改。
   - v1.2（2026-07-23）對齊 `MULTI_APP_RAG_SYNC_PLAN.md` 通用規範決策：1) `rag_sync_status` 新增 `title` 欄位（NVARCHAR(500)），填入文章標題或附件名稱 `name`；2) 觸發端點路徑定案為 `POST /api/external/ingest/trigger`；3) 觸發 Payload 欄位命名對齊通用契約（`appId: "kb"`, `docType`, `sourceId`, `title`, `targetVersion` 等）。
@@ -563,7 +571,7 @@ QDRANT_COLLECTION=         # 使用者另外提供的 collection 名稱
 | 3 | KB 後端 ↔ AiRAG 傳遞方式 | 推播通知（僅 metadata）＋ AiRAG 反向拉取內容，非一次把檔案內容整包塞進通知請求 | 為推論出的介面設計，需與 AiRAG 開發者對齊實際簽章 |
 | 4 | Qdrant 比對效能 | ⚙️v1.1修訂：排程預設只做 DB 驅動的輕量重試（2.1 節，不查 Qdrant），逐文件查 Qdrant 的全量比對改為管理員手動觸發「全量校驗」（2.5 節） | 原設計每次排程都對所有文件查 Qdrant，文件量大時會造成大量請求與排程延遲，已依審查意見修訂為兩層設計 |
 | 5 | KB 後端不引入佇列系統 | 排程內用簡單迴圈依序處理，佇列邏輯（一筆一筆、失敗跳過）規劃在 AiRAG 側 | 現有專案未安裝 Redis，避免不必要的基礎設施 |
-| 6 | AiRAG 直連 SQL Server 憑證範圍 | 建議受限帳號僅能存取 `rag_sync_status`/`rag_sync_logs` | 使用者已決議直連寫入，此為對應的安全建議，需維運端落實 |
+| 6 | AiRAG 直連 SQL Server 憑證範圍 | 建議受限帳號僅能存取 `rag_sync_status`/`rag_sync_logs`；⚠️ **目前 AiRAG 端 `KB_DB_CONNECTION_STRING`（`AiRAG/backend/.env`）暫時沿用既有 `sa` 全權帳號**，尚未建立最小權限受限帳號，屬已知技術債，待建立受限登入後應替換 | 使用者已決議直連寫入，此為對應的安全建議，需維運端落實；2026-07-23 端到端測試時為求快速打通先用 sa 帳號 |
 | 7 | Excel 附件 | 完全不建立比對列、不出現在比對介面 | 符合「excel不做」，明確排除而非顯示「不支援」 |
 | 8 | 永久刪除功能現況 | `unpublished_deleted` 狀態語意已定義，但目前 KB 後端尚無真正的永久刪除功能（`AdminView.vue` 垃圾桶「永久刪除」按鈕尚未串接後端） | 實務上此狀態近期不會被觸發，待永久刪除功能完成後才會出現 |
 

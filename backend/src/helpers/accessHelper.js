@@ -70,6 +70,25 @@ function canAccess(user, resource, extraDeptCodes = []) {
   return false;
 }
 
+/**
+ * 將 access_members 正規化為陣列。
+ * access_members 在 MSSQL 以 JSON 字串儲存；部分舊資料曾被重複 JSON.stringify，
+ * 導致 Article/Attachment model 的 getter 解析一次後仍是字串（例如 "[]"）而非陣列。
+ */
+function normalizeAccessMembers(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 module.exports = {
   canAccess,
+  normalizeAccessMembers,
 };

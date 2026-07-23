@@ -25,6 +25,7 @@
 16. [comment_reads（留言已讀狀態）](#16-comment_reads留言已讀狀態)
 17. [notifications（通知）](#17-notifications通知)
 18. [Table 關聯總覽](#18-table-關聯總覽)
+19. [rag_sync_status / rag_sync_config / rag_sync_logs（RAG 向量同步）](#19-rag_sync_status--rag_sync_config--rag_sync_logsrag-向量同步)
 
 ---
 
@@ -537,4 +538,65 @@ directories
 tags
   ├── id ──N:M──► article_tags.tag_id
   └── id ──N:M──► attachment_tags.tag_id
+
+rag_sync_status（無實體 FK，邏輯關聯）
+  ├── (source_type='article', source_id) ──► articles.id
+  └── (source_type='attachment_file', source_id) ──► attachment_files.id
+                                    parent_attachment_id ──► attachments.id
 ```
+
+---
+
+## 19. rag_sync_status / rag_sync_config / rag_sync_logs（RAG 向量同步）
+
+> 詳細規劃見 [docs/DevelopmentProcess/RAG_SYNC_PLAN.md](DevelopmentProcess/RAG_SYNC_PLAN.md)。三張表均**無實體 FK 約束**（比照既有 `user_extra_departments` 慣例），因為 `rag_sync_status`/`rag_sync_logs` 需同時對應 `articles` 與 `attachment_files` 兩種來源表，且 AiRAG 專案會用獨立帳號直連寫入。
+
+### 19.1 rag_sync_status（同步比對表，核心）
+
+| 欄位 | 型別 | 限制 | 說明 |
+|---|---|---|---|
+| `id` | `INT` | PK, IDENTITY | |
+| `source_type` | `NVARCHAR(20)` | NOT NULL | `'article'` \| `'attachment_file'` |
+| `source_id` | `INT` | NOT NULL | `Article.id` 或 `AttachmentFile.id` |
+| `parent_attachment_id` | `INT` | NULL | 僅 `attachment_file` 類型使用，指向所屬 `Attachment.id` |
+| `title` | `NVARCHAR(500)` | NULL | 文章標題或附件檔名 |
+| `status` | `NVARCHAR(20)` | NOT NULL, DEFAULT `'not_synced'` | `not_synced` \| `outdated` \| `processing` \| `completed` \| `failed` \| `unpublished_kept` \| `unpublished_deleted` |
+| `target_version` | `INT` | NULL | KB 後端標記需要同步時寫入的目標版本號；AiRAG 完成/失敗回報須以此欄位做條件式 UPDATE，防止競態條件 |
+| `progress` | `INT` | NULL | 0–100，由 AiRAG 直連寫入 |
+| `last_synced_version` | `INT` | NULL | 最後一次成功同步的版本號快照 |
+| `last_synced_at` | `DATETIME2` | NULL | 由 AiRAG 直連寫入 |
+| `last_checked_at` | `DATETIME2` | NULL | KB 後端排程最後一次比對時間 |
+| `triggered_by` | `NVARCHAR(20)` | NULL | `'schedule'` \| `'manual'` \| `'auto_update'` |
+| `error_message` | `NVARCHAR(MAX)` | NULL | 最新一筆失敗原因（由 AiRAG 直連寫入） |
+| `created_at` | `DATETIME2` | NOT NULL, DEFAULT GETDATE() | |
+| `updated_at` | `DATETIME2` | NOT NULL, DEFAULT GETDATE() | |
+
+**唯一索引**：`(source_type, source_id)`
+
+### 19.2 rag_sync_config（排程設定表，固定單筆列）
+
+| 欄位 | 型別 | 限制 | 說明 |
+|---|---|---|---|
+| `id` | `INT` | PK, IDENTITY | |
+| `cron_expression` | `NVARCHAR(50)` | NOT NULL, DEFAULT `'0 * * * *'` | node-cron 表達式 |
+| `is_enabled` | `BIT` | NOT NULL, DEFAULT 1 | 是否啟用排程 |
+| `batch_size` | `INT` | NOT NULL, DEFAULT 20 | 單次排程最多處理幾筆落差項目 |
+| `last_run_at` | `DATETIME2` | NULL | 最後一次排程執行時間 |
+| `last_run_summary` | `NVARCHAR(MAX)` | NULL | JSON 字串，例如 `{"checked":50,"triggered":3,"failed":0}` |
+| `updated_by` | `NVARCHAR(50)` | NULL | 最後修改設定的員工工號 |
+| `created_at` | `DATETIME2` | NOT NULL, DEFAULT GETDATE() | |
+| `updated_at` | `DATETIME2` | NOT NULL, DEFAULT GETDATE() | |
+
+### 19.3 rag_sync_logs（錯誤 / 事件 Log）
+
+| 欄位 | 型別 | 限制 | 說明 |
+|---|---|---|---|
+| `id` | `INT` | PK, IDENTITY | |
+| `source_type` | `NVARCHAR(20)` | NULL | 同 `rag_sync_status.source_type`，系統性錯誤可為 NULL |
+| `source_id` | `INT` | NULL | |
+| `stage` | `NVARCHAR(30)` | NOT NULL | `compare`／`notify`／`fetch_content`（KB 後端寫）；`chunking`／`embedding`／`qdrant_upsert`（AiRAG 直連寫） |
+| `level` | `NVARCHAR(10)` | NOT NULL, DEFAULT `'error'` | `info`／`warning`／`error` |
+| `message` | `NVARCHAR(MAX)` | NOT NULL | 錯誤或事件內容 |
+| `occurred_at` | `DATETIME2` | NOT NULL, DEFAULT GETDATE() | |
+
+**索引**：`occurred_at DESC`

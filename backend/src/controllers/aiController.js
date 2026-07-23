@@ -74,4 +74,21 @@ async function writingAssist(req, res) {
   }
 }
 
-module.exports = { summarize, writingAssist };
+// GET /api/v1/ai/config
+async function getAiConfig(req, res) {
+  try {
+    const knowledgeBaseId = process.env.AIRAG_KNOWLEDGE_BASE_ID || process.env.KNOWLEDGE_BASE_ID || '6a59dbc0b482a46dca9eb6a7';
+    return res.json({
+      success: true,
+      data: {
+        knowledgeBaseId,
+      },
+    });
+  } catch (err) {
+    console.error('getAiConfig error:', err.message);
+    return res.status(500).json({ success: false, message: '無法取得 AI 設定' });
+  }
+}
+
+module.exports = { summarize, writingAssist, getAiConfig };
+

@@ -5,14 +5,35 @@
  * 端點：POST /api/external/chat
  */
 
+import { aiService } from './api.js'
+
 // ── 預設設定 ──────────────────────────────────────────────────
 export const AIRAG_BASE_URL = 'http://10.10.130.45:53020/api'
 
 // 請在此處填入預設 API Key（未來將支援依部門由資料庫動態帶入）
 export const DEFAULT_API_KEY = '2XbYokoRla0C54vs_xoXUGGwxtsGLBjAQB8W-2O4OXQ'
 
-// 知識庫 ID（未來將支援依部門由資料庫動態帶入）
-export const KNOWLEDGE_BASE_ID = '6a59dbc0b482a46dca9eb6a7'   // 總覽
+// 預設知識庫 ID（作為後端 API 連線失敗或未設定時的降級備用值）
+export const KNOWLEDGE_BASE_ID = ''
+
+let cachedKnowledgeBaseId = null
+
+/**
+ * 向 KB 後端取得知識庫 ID（包含快取機制）
+ */
+export async function getKnowledgeBaseId() {
+  if (cachedKnowledgeBaseId) return cachedKnowledgeBaseId
+  try {
+    const res = await aiService.getConfig()
+    if (res?.knowledgeBaseId) {
+      cachedKnowledgeBaseId = res.knowledgeBaseId
+      return cachedKnowledgeBaseId
+    }
+  } catch (err) {
+    console.warn('[AiRAGApi] 取得知識庫 ID 失敗，使用備用預設值:', err)
+  }
+  return KNOWLEDGE_BASE_ID
+}
 
 /**
  * 發送外部問答串流請求 (POST /api/external/chat)
@@ -48,14 +69,19 @@ export async function sendExternalChat(payload, options = {}) {
   const apiKey = options.apiKey || DEFAULT_API_KEY
   const baseUrl = options.baseUrl || AIRAG_BASE_URL
 
-  const {
+  let {
     question,
-    knowledgeBaseId = KNOWLEDGE_BASE_ID,
+    knowledgeBaseId,
     chatHistory = [],
     selectedDbProfileId = null,
     externalUser,
     params = {},
   } = payload || {}
+
+  if (!knowledgeBaseId) {
+    knowledgeBaseId = await getKnowledgeBaseId()
+  }
+
 
   if (!question) {
     throw new Error('提問內容 (question) 為必填欄位')
@@ -209,5 +235,8 @@ export async function sendExternalChat(payload, options = {}) {
 export default {
   AIRAG_BASE_URL,
   DEFAULT_API_KEY,
+  KNOWLEDGE_BASE_ID,
+  getKnowledgeBaseId,
   sendExternalChat,
 }
+

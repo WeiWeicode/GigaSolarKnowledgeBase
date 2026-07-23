@@ -16,6 +16,9 @@ const UserRole   = require('./UserRole');
 const UserExtraDepartment = require('./UserExtraDepartment');
 const AiConfig   = require('./AiConfig');
 const AiPromptTemplate = require('./AiPromptTemplate');
+const RagSyncStatus = require('./RagSyncStatus');
+const RagSyncConfig = require('./RagSyncConfig');
+const RagSyncLog    = require('./RagSyncLog');
 
 
 // ── 中間表 Model（定義在此，不另開檔案）─────────────────────
@@ -138,4 +141,7 @@ module.exports = {
   UserExtraDepartment,
   AiConfig,
   AiPromptTemplate,
+  RagSyncStatus,
+  RagSyncConfig,
+  RagSyncLog,
 };

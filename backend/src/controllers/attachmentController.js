@@ -8,6 +8,8 @@ const {
 } = require('../models');
 const { canAccess } = require('../helpers/accessHelper');
 const { v4: uuidv4 } = require('uuid');
+const ragSyncService = require('../services/ragSyncService');
+const { SYNCABLE_MIME_TYPES } = require('../helpers/fileTypeHelper');
 
 /**
  * 取得使用者的跨部門授權代碼清單
@@ -87,6 +89,13 @@ async function getAllAttachments(req, res) {
     });
 
     filtered.forEach(a => a.setDataValue('directoryIds', dirMap[a.id] || []));
+
+    // RAG 同步狀態以檔案（AttachmentFile）為單位，逐檔附加
+    const allFileIds = filtered.flatMap(a => (a.Files || []).map(f => f.id));
+    const fileRagStatusMap = await ragSyncService.getStatusMap('attachment_file', allFileIds);
+    filtered.forEach(a => {
+      (a.Files || []).forEach(f => f.setDataValue('ragSyncStatus', fileRagStatusMap[f.id] || null));
+    });
 
     return res.json({ success: true, data: filtered });
   } catch (error) {
@@ -180,6 +189,10 @@ async function getAttachmentById(req, res) {
     // 補上關聯文章 id 陣列
     const linkedArticles = await attachment.getArticles({ attributes: ['id'] });
     attachment.setDataValue('linkedArticleIds', linkedArticles.map(a => a.id));
+
+    const fileIds = (attachment.Files || []).map(f => f.id);
+    const fileRagStatusMap = await ragSyncService.getStatusMap('attachment_file', fileIds);
+    (attachment.Files || []).forEach(f => f.setDataValue('ragSyncStatus', fileRagStatusMap[f.id] || null));
 
     return res.json({ success: true, data: attachment });
   } catch (error) {
@@ -296,6 +309,16 @@ async function createAttachment(req, res) {
     }
 
     await t.commit();
+
+    // 對此附件包底下所有 PDF/Word 檔案觸發 RAG 同步通知
+    const syncableFiles = await AttachmentFile.findAll({
+      where: { attachment_id: attachment.id, mime_type: { [Op.in]: SYNCABLE_MIME_TYPES } },
+    });
+    syncableFiles.forEach(f => {
+      ragSyncService.notifyChanged('attachment_file', f.id, 'upsert')
+        .catch(err => console.error('RAG sync notify failed:', err.message));
+    });
+
     return res.status(201).json({ success: true, data: attachment });
   } catch (error) {
     console.error('createAttachment error:', error.message);
@@ -445,6 +468,17 @@ async function updateAttachment(req, res) {
     }
 
     await t.commit();
+
+    // 即使本次沒有新增檔案（只改權限/中繼資料），也要對既有 PDF/Word 檔案觸發通知，
+    // 因為比對基準是父層 Attachment 的版本與權限（見 RAG_SYNC_PLAN.md 9.1 節）
+    const syncableFiles = await AttachmentFile.findAll({
+      where: { attachment_id: id, mime_type: { [Op.in]: SYNCABLE_MIME_TYPES } },
+    });
+    syncableFiles.forEach(f => {
+      ragSyncService.notifyChanged('attachment_file', f.id, 'upsert')
+        .catch(err => console.error('RAG sync notify failed:', err.message));
+    });
+
     return res.json({ success: true, data: attachment });
   } catch (error) {
     console.error('updateAttachment error:', error.message);

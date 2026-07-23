@@ -23,6 +23,7 @@
    - [Notification（通知）](#49-notification通知)
    - [Version — Article（文章版本）](#410-version--article文章版本)
    - [Version — Attachment（附件版本）](#411-version--attachment附件版本)
+   - [RAG Sync（RAG 向量同步）](#412-rag-syncrag-向量同步)
 5. [權限模型](#5-權限模型)
 6. [HTTP 錯誤碼一覽](#6-http-錯誤碼一覽)
 
@@ -819,6 +820,41 @@ Authorization: Bearer <token>
 
 #### 🔐 GET `/api/attachments/{attachmentId}/versions`
 **Response** `AttachmentVersionHistory[]`
+
+---
+
+### 4.12 RAG Sync（RAG 向量同步）
+
+> 詳細規劃見 [docs/DevelopmentProcess/RAG_SYNC_PLAN.md](DevelopmentProcess/RAG_SYNC_PLAN.md)。保護等級符號額外新增 🔑：需要 `X-RAG-Sync-Key` API Key（伺服器對伺服器，供 AiRAG 呼叫，非使用者登入）。
+
+#### 🔐👑 GET `/api/v1/rag-sync/config`
+取得目前排程設定。
+**Response** `{ "success": true, "data": { "cronExpression", "isEnabled", "batchSize", "lastRunAt", "lastRunSummary" } }`
+
+#### 🔐👑 PUT `/api/v1/rag-sync/config`
+更新排程設定，儲存後立即套用新的 cron 表達式。
+**Request Body** `{ "cronExpression", "isEnabled", "batchSize" }`
+
+#### 🔐👑 GET `/api/v1/rag-sync/status`
+比對狀態列表。**Query** `page`、`pageSize`、`status`、`sourceType`、`keyword`
+
+#### 🔐👑 POST `/api/v1/rag-sync/status/execute`
+手動指定項目重新執行切分。
+**Request Body** `{ "items": [ { "sourceType": "article", "sourceId": 12 } ] }`
+
+#### 🔐👑 GET `/api/v1/rag-sync/logs`
+錯誤/事件 Log 列表。**Query** `page`、`pageSize`、`stage`、`level`、`startDate`、`endDate`
+
+#### 🔐👑 POST `/api/v1/rag-sync/audit`
+觸發全量校驗（逐筆比對 KB DB 與 Qdrant 實際資料），立即回應，實際校驗於背景執行。
+
+#### 🔑 GET `/api/v1/rag-sync-content/article/:id`
+供 AiRAG 拉取文章內容，`is_published=false` 一律回傳 404。
+**Response** `{ "appId": "kb", "docType": "article", "sourceId", "title", "content", "version", "updatedAt", "permissions": { "isPublic", "accessDept", "accessLevel", "accessMembers" } }`
+
+#### 🔑 GET `/api/v1/rag-sync-content/attachment-file/:id`
+供 AiRAG 拉取附件檔案二進位，所屬 `Attachment.is_published=false` 一律回傳 404。
+**Response** 檔案二進位，Header 附 `X-Doc-App-Id`、`X-Doc-Version`、`X-Doc-Updated-At`、`X-Doc-Is-Public`、`X-Doc-Access-Dept`、`X-Doc-Access-Level`、`X-Doc-Access-Members`
 
 ---
 

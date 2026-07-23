@@ -162,6 +162,7 @@ function normalizeAttachment(a) {
         : (f.url ? (f.url.startsWith('http') ? f.url : `${BACKEND_ORIGIN}${f.url}`) : null),
       storagePath:   f.storage_path,
       versionNumber: f.version_number,
+      ragSyncStatus: f.ragSyncStatus || null,
     })),
   }
 }
@@ -871,6 +872,90 @@ export const crossDeptService = {
 }
 
 
+// ============================================================
+// RAG Sync Service（RAG 向量同步管理，僅 ADMIN）
+// 對應文檔：docs/DevelopmentProcess/RAG_SYNC_PLAN.md 4.4 節
+// ============================================================
+function normalizeRagSyncStatusRow(r) {
+  return {
+    id:                 r.id,
+    sourceType:         r.source_type,
+    sourceId:           r.source_id,
+    parentAttachmentId: r.parent_attachment_id,
+    title:              r.title,
+    status:             r.status,
+    targetVersion:      r.target_version,
+    progress:           r.progress,
+    lastSyncedVersion:  r.last_synced_version,
+    lastSyncedAt:       r.last_synced_at,
+    lastCheckedAt:      r.last_checked_at,
+    triggeredBy:        r.triggered_by,
+    errorMessage:       r.error_message,
+    updatedAt:          r.updated_at,
+  }
+}
+
+function normalizeRagSyncLog(l) {
+  return {
+    id:         l.id,
+    sourceType: l.source_type,
+    sourceId:   l.source_id,
+    stage:      l.stage,
+    level:      l.level,
+    message:    l.message,
+    occurredAt: l.occurred_at,
+  }
+}
+
+export const ragSyncService = {
+  /** 取得目前排程設定 */
+  async getConfig() {
+    const res = await http.get('/rag-sync/config')
+    return res.data   // { cronExpression, isEnabled, batchSize, lastRunAt, lastRunSummary }
+  },
+
+  /** 更新排程設定，儲存後後端會立即套用新的 cron 表達式 */
+  async updateConfig({ cronExpression, isEnabled, batchSize }) {
+    const res = await http.put('/rag-sync/config', { cronExpression, isEnabled, batchSize })
+    return res.data
+  },
+
+  /** 比對狀態列表（分頁 + 篩選：status / sourceType / keyword） */
+  async getStatusList(params = {}) {
+    const res = await http.get('/rag-sync/status', { params })
+    return {
+      items:    (res.data.items || []).map(normalizeRagSyncStatusRow),
+      total:    res.data.total,
+      page:     res.data.page,
+      pageSize: res.data.pageSize,
+    }
+  },
+
+  /** 手動指定項目重新執行切分：items = [{ sourceType, sourceId }] */
+  async executeManual(items) {
+    const res = await http.post('/rag-sync/status/execute', { items })
+    return res.data
+  },
+
+  /** 錯誤/事件 Log 列表（分頁 + 篩選：stage / level / startDate / endDate） */
+  async getLogs(params = {}) {
+    const res = await http.get('/rag-sync/logs', { params })
+    return {
+      items:    (res.data.items || []).map(normalizeRagSyncLog),
+      total:    res.data.total,
+      page:     res.data.page,
+      pageSize: res.data.pageSize,
+    }
+  },
+
+  /** 觸發全量校驗（立即回應，實際校驗在後端背景執行） */
+  async runAudit() {
+    const res = await http.post('/rag-sync/audit')
+    return res.data
+  },
+}
+
+
 // ── AI SSE Stream Helper ──────────────────────────────────────
 async function readSSEStream(response, { onThinking, onDelta, onDone, onError } = {}) {
   const reader  = response.body.getReader()
@@ -904,6 +989,14 @@ async function readSSEStream(response, { onThinking, onDelta, onDone, onError } 
 }
 
 export const aiService = {
+  /**
+   * 取得 AI 配置資訊（如知識庫 ID）
+   */
+  async getConfig() {
+    const res = await http.get('/ai/config')
+    return res.data  // { knowledgeBaseId }
+  },
+
   /**
    * 文章解析助手（首頁 AI 問答）
    * @param {string} content
@@ -953,5 +1046,6 @@ export const aiService = {
     await readSSEStream(res, callbacks)
   },
 }
+
 
 export default http
