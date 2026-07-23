@@ -171,10 +171,11 @@
 - [API 合約文件](./docs/03_API_CONTRACT.md)
 - [資料庫 Schema](./docs/04_DB_SCHEMA.md)
 - [驗收規格](./docs/05_ACCEPTANCE.md)
-- [AI 後端任務](./docs/AI_BACKEND_TASK.md)
-- [前端待修正項目](./docs/FRONTEND_PENDING.md)
-- [後端待修正項目](./docs/BACKEND_PENDING.md)
+- [AI 後端任務](./docs/DevelopmentProcess/AI_BACKEND_TASK.md)
+- [前端待修正項目](./docs/DevelopmentProcess/FRONTEND_PENDING.md)
+- [後端待修正項目](./docs/DevelopmentProcess/BACKEND_PENDING.md)
 - [前端開發指南](./frontend/FRONTEND_GUIDE.md)
+- [新功能開發文件放到，並產生MD檔](./docs/DevelopmentProcess/)
 
 ## 技術棧
 
