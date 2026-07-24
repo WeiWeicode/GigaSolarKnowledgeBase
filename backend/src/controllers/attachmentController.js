@@ -383,9 +383,10 @@ async function updateAttachment(req, res) {
     }, { transaction: t });
 
     // 3. 更新附件檔案（同步移除與批次新增）
+    let deletedSyncableFileIds = [];
     if (Array.isArray(files)) {
       const existingFiles = await AttachmentFile.findAll({
-        where: { attachment_id: id }, attributes: ['id', 'uuid'], transaction: t,
+        where: { attachment_id: id }, attributes: ['id', 'uuid', 'mime_type'], transaction: t,
       });
       const existingUUIDs = new Set(existingFiles.map(f => f.uuid));
       const keptUUIDs = new Set(files.map(f => f.uuid).filter(Boolean));
@@ -393,6 +394,10 @@ async function updateAttachment(req, res) {
       // (1) 刪除已被前端移除的舊檔案紀錄
       const toDelete = existingFiles.filter(f => !keptUUIDs.has(f.uuid));
       if (toDelete.length > 0) {
+        // 記下已同步過 RAG 的檔案 id，待 transaction commit 後通知刪除對應向量，避免 Qdrant 留下孤兒資料
+        deletedSyncableFileIds = toDelete
+          .filter(f => SYNCABLE_MIME_TYPES.includes(f.mime_type))
+          .map(f => f.id);
         await AttachmentFile.destroy({
           where: { id: { [Op.in]: toDelete.map(f => f.id) } },
           transaction: t,
@@ -480,6 +485,12 @@ async function updateAttachment(req, res) {
     }
 
     await t.commit();
+
+    // 檔案已從附件包移除，通知刪除其 Qdrant 向量與 rag_sync_status，避免孤兒資料殘留
+    deletedSyncableFileIds.forEach(fileId => {
+      ragSyncService.notifyChanged('attachment_file', fileId, 'delete')
+        .catch(err => console.error('RAG sync delete notify failed:', err.message));
+    });
 
     // 即使本次沒有新增檔案（只改權限/中繼資料），也要對既有 PDF/Word 檔案觸發通知，
     // 因為比對基準是父層 Attachment 的版本與權限（見 RAG_SYNC_PLAN.md 9.1 節）

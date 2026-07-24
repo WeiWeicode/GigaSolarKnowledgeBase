@@ -383,7 +383,7 @@ function ragStatusLabel(status) {
   return {
     not_synced: 'AI 待處理', outdated: 'AI 待更新', processing: 'AI 處理中',
     completed: 'AI 已就緒', failed: 'AI 處理失敗',
-    unpublished_kept: '已下架 (保留問答)', unpublished_deleted: '已下架 (移除問答)',
+    unpublished_kept: '已下架 (已刪除向量)', unpublished_deleted: '已下架 (移除問答)',
   }[status] || 'AI 待處理'
 }
 function ragStatusTooltip(status) {
@@ -393,7 +393,7 @@ function ragStatusTooltip(status) {
     processing: 'AI 正在將資料處理中',
     completed: 'AI 已經處理完成，可於問答中詢問',
     failed: 'AI 向量處理失敗，請告知資訊人員',
-    unpublished_kept: '內容已下架，但保留 AI 檢索功能',
+    unpublished_kept: '內容已下架，AI 檢索用的向量資料已刪除',
     unpublished_deleted: '內容已下架，並已移除 AI 檢索資料',
   }[status] || 'AI 尚未處理此資料'
 }

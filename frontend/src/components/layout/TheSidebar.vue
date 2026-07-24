@@ -71,10 +71,16 @@ const computedNavItems = computed(() => {
 })
 
 async function onScopeChange(newScope) {
+  const oid = auth.user?.組織OID || dirStore.currentCompany
   if (newScope === 'public') {
     // 切到公開文件時，重新抓取跨部門公開樹
-    const oid = auth.user?.組織OID || dirStore.currentCompany
     if (oid) dirStore.fetchPublicTree(oid)
+  } else if (newScope === 'dept') {
+    // 切回部門文件時，還原為使用者自己的部門並重新載入部門樹
+    const userDept = auth.user?.部門代碼
+    if (oid && userDept) {
+      await dirStore.fetchTree(oid, userDept)
+    }
   }
   router.push('/home')
 }

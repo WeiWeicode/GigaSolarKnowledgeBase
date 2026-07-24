@@ -8,13 +8,12 @@
 import { aiService } from './api.js'
 
 // ── 預設設定 ──────────────────────────────────────────────────
-// 自動偵測主機：本地開發 (localhost) 或生產環境，埠號固定為 53020
-const _aiRagHost = typeof window !== 'undefined' && window.location?.hostname ? window.location.hostname : '10.10.130.45'
+// 自動偵測主機：本地開發 (localhost) 指向 localhost，生產環境指向獨立 AiRAG 伺服器 10.10.130.45
+const _isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+const _aiRagHost = _isLocal ? 'localhost' : '10.10.130.45'
 export const AIRAG_BASE_URL = `http://${_aiRagHost}:53020/api`
 
-// 降級備用 API Key 與 知識庫 ID
-export const DEFAULT_API_KEY = 'ZNFM27RGnDKXI66-K6dxq5eGHI5V8WMHcwS8tWQN5-4'
-export const KNOWLEDGE_BASE_ID = '6a6020afca0400ef553cc075'
+
 
 let cachedConfig = null
 
