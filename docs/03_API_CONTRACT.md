@@ -850,11 +850,13 @@ Authorization: Bearer <token>
 
 #### 🔑 GET `/api/v1/rag-sync-content/article/:id`
 供 AiRAG 拉取文章內容，`is_published=false` 一律回傳 404。
-**Response** `{ "appId": "kb", "docType": "article", "sourceId", "title", "content", "version", "updatedAt", "permissions": { "isPublic", "accessDept", "accessLevel", "accessMembers" } }`
+**Response** `{ "appId": "kb", "docType": "article", "sourceId", "title", "content", "version", "updatedAt", "tags": string[], "class": string[], "linksTo": string[], "permissions": { "isPublic", "accessDept", "accessLevel", "accessMembers" } }`
+`tags` 為文章標籤名稱陣列、`class` 為所屬目錄 label 陣列、`linksTo` 為關聯附件標題陣列，供 AiRAG 寫入 Qdrant payload 對應欄位。
 
 #### 🔑 GET `/api/v1/rag-sync-content/attachment-file/:id`
 供 AiRAG 拉取附件檔案二進位，所屬 `Attachment.is_published=false` 一律回傳 404。
-**Response** 檔案二進位，Header 附 `X-Doc-App-Id`、`X-Doc-Version`、`X-Doc-Updated-At`、`X-Doc-Is-Public`、`X-Doc-Access-Dept`、`X-Doc-Access-Level`、`X-Doc-Access-Members`
+**Response** 檔案二進位，Header 附 `X-Doc-App-Id`、`X-Doc-Version`、`X-Doc-Updated-At`、`X-Doc-Is-Public`、`X-Doc-Access-Dept`、`X-Doc-Access-Level`、`X-Doc-Access-Members`、`X-Doc-Tags`、`X-Doc-Class`、`X-Doc-Links-To`
+`X-Doc-Tags`/`X-Doc-Class`/`X-Doc-Links-To` 為 `encodeURIComponent(JSON.stringify(string[]))` 編碼後的字串（附件標籤、所屬目錄 label、關聯文章標題），避免中文字元造成 Header 問題。
 
 ---
 

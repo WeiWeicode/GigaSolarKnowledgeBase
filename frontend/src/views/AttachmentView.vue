@@ -247,7 +247,8 @@
       <div class="kb-card detail-section">
         <h3 class="section-title">檔案清單</h3>
         <el-upload v-if="isEditing || mode === 'create'" drag multiple :auto-upload="false" :file-list="fileList"
-          accept=".doc,.docx,.xls,.xlsx,.pdf,.jpg,.png,.txt" class="upload-dragger" @change="onFileChange">
+          accept=".doc,.docx,.xls,.xlsx,.pdf,.jpg,.png,.txt" class="upload-dragger" @change="onFileChange"
+          :on-remove="onFileRemove">
           <div class="upload-inner">
             <el-icon class="upload-icon">
               <UploadFilled />
@@ -266,12 +267,17 @@
               <el-tag size="small" type="info" effect="plain" class="file-version-tag">
                 v{{ f.versionNumber || 1 }}
               </el-tag>
-              <el-tag v-if="isSyncableFile(f)" size="small" :type="ragStatusTagType(f.ragSyncStatus?.status)">
-                {{ ragStatusLabel(f.ragSyncStatus?.status) }}
-              </el-tag>
+              <el-tooltip v-if="isSyncableFile(f)" :content="ragStatusTooltip(f.ragSyncStatus?.status)" placement="top">
+                <el-tag size="small" :type="ragStatusTagType(f.ragSyncStatus?.status)" class="cursor-pointer">
+                  {{ ragStatusLabel(f.ragSyncStatus?.status) }}
+                </el-tag>
+              </el-tooltip>
               <span class="file-size">{{ formatFileSize(f.size) }}</span>
             </div>
-            <el-button size="small" type="primary" plain @click="handleDownload(f)">下載</el-button>
+            <div class="file-actions">
+              <el-button size="small" type="primary" plain @click="handleDownload(f)">下載</el-button>
+              <el-button v-if="isEditing" size="small" type="danger" plain @click="removeExistingFile(f.uuid)">刪除</el-button>
+            </div>
           </div>
         </div>
       </div>
@@ -336,7 +342,7 @@ import { useAuthStore } from '@/store/auth.js'
 import { useDirectoryStore } from '@/store/directory.js'
 import { attachmentService, tagService, colleagueService, articleService, crossDeptService } from '@/services/api.js'
 import { formatDateTime, formatFileSize } from '@/utils/dateFormat.js'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import CommentPanel from '@/components/panels/CommentPanel.vue'
 import VersionHistoryPanel from '@/components/panels/VersionHistoryPanel.vue'
 
@@ -391,10 +397,21 @@ function isSyncableFile(f) {
 }
 function ragStatusLabel(status) {
   return {
-    not_synced: '未同步', outdated: '已過期', processing: '處理中',
-    completed: '已完成', failed: '失敗',
-    unpublished_kept: '下架未刪除', unpublished_deleted: '下架已刪除',
-  }[status] || '未同步'
+    not_synced: 'AI 待處理', outdated: 'AI 待更新', processing: 'AI 處理中',
+    completed: 'AI 已就緒', failed: 'AI 處理失敗',
+    unpublished_kept: '已下架 (保留問答)', unpublished_deleted: '已下架 (移除問答)',
+  }[status] || 'AI 待處理'
+}
+function ragStatusTooltip(status) {
+  return {
+    not_synced: 'AI 尚未處理此資料',
+    outdated: '內容已修改，等待 AI 重新處理更新',
+    processing: 'AI 正在將資料處理中',
+    completed: 'AI 已經處理完成，可於問答中詢問',
+    failed: 'AI 向量處理失敗，請告知資訊人員',
+    unpublished_kept: '內容已下架，但保留 AI 檢索功能',
+    unpublished_deleted: '內容已下架，並已移除 AI 檢索資料',
+  }[status] || 'AI 尚未處理此資料'
 }
 function ragStatusTagType(status) {
   return {
@@ -449,12 +466,27 @@ function cancelEdit() { isEditing.value = false; loadAttachment() }
 function removeDir(id) { form.directories = form.directories.filter(d => d !== id) }
 function removeEditor(id) { form.editorIds = form.editorIds.filter(e => e !== id) }
 function removeLinkedArticle(id) { form.linkedArticleIds = form.linkedArticleIds.filter(a => a !== id) }
-function onFileChange(file) {
-  fileList.value = [...fileList.value, file]
+function onFileChange(file, uploadFileList) {
+  fileList.value = uploadFileList
   if (!form.title && fileList.value.length === 1) {
     const name = file.name || ''; const dot = name.lastIndexOf('.')
     form.title = dot > -1 ? name.slice(0, dot) : name
   }
+}
+function onFileRemove(file, uploadFileList) {
+  fileList.value = uploadFileList
+}
+function removeExistingFile(uuid) {
+  ElMessageBox.confirm('確定要移除此附件檔案嗎？（儲存後生效）', '提示', {
+    confirmButtonText: '確定',
+    cancelButtonText: '取消',
+    type: 'warning',
+  }).then(() => {
+    if (attachment.value?.files) {
+      attachment.value.files = attachment.value.files.filter(f => f.uuid !== uuid)
+      ElMessage.success('已移除檔案，請點擊上方「儲存」按鈕套用變更')
+    }
+  }).catch(() => {})
 }
 function confirmDirSelection() {
   form.directories = (dirTreeRef.value?.getCheckedNodes(false, false) || []).filter(n => n.type === 'directory').map(n => n.id)

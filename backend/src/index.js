@@ -127,6 +127,13 @@ async function startServer() {
       `);
     };
     await addAiConfigColIfMissing('ai_tool', "ai_tool VARCHAR(50) NOT NULL DEFAULT 'llama.cpp'");
+    await addAiConfigColIfMissing('active_env', "active_env VARCHAR(20) NOT NULL DEFAULT 'prod'");
+    await addAiConfigColIfMissing('knowledge_base_id', "knowledge_base_id NVARCHAR(255) NULL");
+    await addAiConfigColIfMissing('api_key', "api_key NVARCHAR(255) NULL");
+    await addAiConfigColIfMissing('prod_api_key', "prod_api_key NVARCHAR(255) NULL");
+    await addAiConfigColIfMissing('prod_knowledge_base_id', "prod_knowledge_base_id NVARCHAR(255) NULL");
+    await addAiConfigColIfMissing('dev_api_key', "dev_api_key NVARCHAR(255) NULL");
+    await addAiConfigColIfMissing('dev_knowledge_base_id', "dev_knowledge_base_id NVARCHAR(255) NULL");
     console.log('✅ ai_configs 資料表已就緒（含新增欄位）');
 
     // 3. 目錄樹與 AI 提示詞種子資料（當表為空時自動初始化）

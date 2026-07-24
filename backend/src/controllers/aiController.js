@@ -1,6 +1,7 @@
 const mammoth   = require('mammoth');
 const pdfParse  = require('pdf-parse');
 const aiService = require('../services/aiService');
+const { AiConfig } = require('../models');
 
 function setSSEHeaders(res) {
   res.setHeader('Content-Type',       'text/event-stream');
@@ -77,11 +78,35 @@ async function writingAssist(req, res) {
 // GET /api/v1/ai/config
 async function getAiConfig(req, res) {
   try {
-    const knowledgeBaseId = process.env.AIRAG_KNOWLEDGE_BASE_ID || process.env.KNOWLEDGE_BASE_ID || '6a59dbc0b482a46dca9eb6a7';
+    const activeDbConfig = await AiConfig.findOne({
+      where: { is_active: true },
+    }).catch(err => {
+      console.warn('[getAiConfig] 查詢 DB AiConfig 失敗，改用環境變數:', err.message);
+      return null;
+    });
+
+    const activeEnv = activeDbConfig?.active_env || 'prod';
+
+    const prodApiKey = activeDbConfig?.prod_api_key || activeDbConfig?.api_key || process.env.AIRAG_CHAT_API_KEY || 'ZNFM27RGnDKXI66-K6dxq5eGHI5V8WMHcwS8tWQN5-4';
+    const prodKnowledgeBaseId = activeDbConfig?.prod_knowledge_base_id || activeDbConfig?.knowledge_base_id || process.env.AIRAG_KNOWLEDGE_BASE_ID || '6a6020afca0400ef553cc075';
+
+    const devApiKey = activeDbConfig?.dev_api_key || '';
+    const devKnowledgeBaseId = activeDbConfig?.dev_knowledge_base_id || '';
+
+    // 根據當前啟用的環境 (prod 或 test) 自動選擇當前要使用的 apiKey 與 knowledgeBaseId
+    const currentApiKey = activeEnv === 'test' ? (devApiKey || prodApiKey) : prodApiKey;
+    const currentKnowledgeBaseId = activeEnv === 'test' ? (devKnowledgeBaseId || prodKnowledgeBaseId) : prodKnowledgeBaseId;
+
     return res.json({
       success: true,
       data: {
-        knowledgeBaseId,
+        activeEnv,
+        apiKey: currentApiKey,
+        knowledgeBaseId: currentKnowledgeBaseId,
+        prodApiKey,
+        prodKnowledgeBaseId,
+        devApiKey,
+        devKnowledgeBaseId,
       },
     });
   } catch (err) {
@@ -90,5 +115,65 @@ async function getAiConfig(req, res) {
   }
 }
 
-module.exports = { summarize, writingAssist, getAiConfig };
+// POST /api/v1/ai/config
+async function saveAiConfig(req, res) {
+  try {
+    const {
+      activeEnv,
+      prodApiKey,
+      prodKnowledgeBaseId,
+      devApiKey,
+      devKnowledgeBaseId,
+    } = req.body;
+
+    let [configRecord] = await AiConfig.findOrCreate({
+      where: { is_active: true },
+      defaults: {
+        config_name: 'default',
+        api_url: 'http://localhost:53020/api',
+        model_name: 'default',
+        is_active: true,
+        ai_tool: 'AiRAG',
+        active_env: activeEnv || 'prod',
+        prod_api_key: prodApiKey || 'ZNFM27RGnDKXI66-K6dxq5eGHI5V8WMHcwS8tWQN5-4',
+        prod_knowledge_base_id: prodKnowledgeBaseId || '6a6020afca0400ef553cc075',
+        dev_api_key: devApiKey || '',
+        dev_knowledge_base_id: devKnowledgeBaseId || '',
+      },
+    });
+
+    if (activeEnv !== undefined) configRecord.active_env = activeEnv;
+    if (prodApiKey !== undefined) configRecord.prod_api_key = prodApiKey;
+    if (prodKnowledgeBaseId !== undefined) configRecord.prod_knowledge_base_id = prodKnowledgeBaseId;
+    if (devApiKey !== undefined) configRecord.dev_api_key = devApiKey;
+    if (devKnowledgeBaseId !== undefined) configRecord.dev_knowledge_base_id = devKnowledgeBaseId;
+
+    // 同步相容舊版欄位
+    const effectiveApiKey = configRecord.active_env === 'test' ? (configRecord.dev_api_key || configRecord.prod_api_key) : configRecord.prod_api_key;
+    const effectiveKbId = configRecord.active_env === 'test' ? (configRecord.dev_knowledge_base_id || configRecord.prod_knowledge_base_id) : configRecord.prod_knowledge_base_id;
+    configRecord.api_key = effectiveApiKey;
+    configRecord.knowledge_base_id = effectiveKbId;
+
+    await configRecord.save();
+
+    return res.json({
+      success: true,
+      message: 'AI API Key 設定已成功儲存',
+      data: {
+        activeEnv: configRecord.active_env,
+        apiKey: effectiveApiKey,
+        knowledgeBaseId: effectiveKbId,
+        prodApiKey: configRecord.prod_api_key,
+        prodKnowledgeBaseId: configRecord.prod_knowledge_base_id,
+        devApiKey: configRecord.dev_api_key,
+        devKnowledgeBaseId: configRecord.dev_knowledge_base_id,
+      },
+    });
+  } catch (err) {
+    console.error('saveAiConfig error:', err.message);
+    return res.status(500).json({ success: false, message: '更新 AI API Key 設定失敗' });
+  }
+}
+
+module.exports = { summarize, writingAssist, getAiConfig, saveAiConfig };
 

@@ -207,9 +207,11 @@
             <el-tag :type="form.isPublished ? 'success' : 'info'" size="small">{{ form.isPublished ? '已上架' : '已下架' }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="RAG 同步狀態">
-            <el-tag size="small" :type="ragStatusTagType(article?.ragSyncStatus?.status)">
-              {{ ragStatusLabel(article?.ragSyncStatus?.status) }}
-            </el-tag>
+            <el-tooltip :content="ragStatusTooltip(article?.ragSyncStatus?.status)" placement="top">
+              <el-tag size="small" :type="ragStatusTagType(article?.ragSyncStatus?.status)" class="cursor-pointer">
+                {{ ragStatusLabel(article?.ragSyncStatus?.status) }}
+              </el-tag>
+            </el-tooltip>
           </el-descriptions-item>
           <el-descriptions-item label="是否公開">
             <el-tag :type="form.isPublic ? 'warning' : 'info'" size="small">{{ form.isPublic ? '全集團公開' : '部門私有' }}</el-tag>
@@ -379,10 +381,21 @@ function gradeLevelLabel(v) {
 // RAG 同步狀態顯示（見 docs/DevelopmentProcess/RAG_SYNC_PLAN.md 3.1.1 節狀態機）
 function ragStatusLabel(status) {
   return {
-    not_synced: '未同步', outdated: '已過期', processing: '處理中',
-    completed: '已完成', failed: '失敗',
-    unpublished_kept: '下架未刪除', unpublished_deleted: '下架已刪除',
-  }[status] || '未同步'
+    not_synced: 'AI 待處理', outdated: 'AI 待更新', processing: 'AI 處理中',
+    completed: 'AI 已就緒', failed: 'AI 處理失敗',
+    unpublished_kept: '已下架 (保留問答)', unpublished_deleted: '已下架 (移除問答)',
+  }[status] || 'AI 待處理'
+}
+function ragStatusTooltip(status) {
+  return {
+    not_synced: 'AI 尚未處理此資料',
+    outdated: '內容已修改，等待 AI 重新處理更新',
+    processing: 'AI 正在將資料處理中',
+    completed: 'AI 已經處理完成，可於問答中詢問',
+    failed: 'AI 向量處理失敗，請告知資訊人員',
+    unpublished_kept: '內容已下架，但保留 AI 檢索功能',
+    unpublished_deleted: '內容已下架，並已移除 AI 檢索資料',
+  }[status] || 'AI 尚未處理此資料'
 }
 function ragStatusTagType(status) {
   return {

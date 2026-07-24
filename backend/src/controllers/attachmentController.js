@@ -246,7 +246,7 @@ async function createAttachment(req, res) {
       description,
       is_published:  isPublished,
       is_public:     isPublic,
-      access_dept:   accessDept,
+      access_dept:   accessDept || req.user.部門代碼,
       access_members: Array.isArray(accessMembers) ? JSON.stringify(accessMembers) : accessMembers,
       access_level:  accessLevel,
       created_by:    req.user.員工工號,
@@ -374,7 +374,7 @@ async function updateAttachment(req, res) {
       description,
       is_published:  isPublished,
       is_public:     isPublic,
-      access_dept:   accessDept,
+      access_dept:   accessDept || attachment.access_dept || req.user.部門代碼,
       access_members: Array.isArray(accessMembers) ? JSON.stringify(accessMembers) : accessMembers,
       access_level:  accessLevel,
       version_number: nextVersion,
@@ -382,12 +382,24 @@ async function updateAttachment(req, res) {
       updated_by_name: req.user.員工姓名,
     }, { transaction: t });
 
-    // 3. 只插入真正新的檔案
-    if (files?.length > 0) {
+    // 3. 更新附件檔案（同步移除與批次新增）
+    if (Array.isArray(files)) {
       const existingFiles = await AttachmentFile.findAll({
-        where: { attachment_id: id }, attributes: ['uuid'], transaction: t,
+        where: { attachment_id: id }, attributes: ['id', 'uuid'], transaction: t,
       });
       const existingUUIDs = new Set(existingFiles.map(f => f.uuid));
+      const keptUUIDs = new Set(files.map(f => f.uuid).filter(Boolean));
+
+      // (1) 刪除已被前端移除的舊檔案紀錄
+      const toDelete = existingFiles.filter(f => !keptUUIDs.has(f.uuid));
+      if (toDelete.length > 0) {
+        await AttachmentFile.destroy({
+          where: { id: { [Op.in]: toDelete.map(f => f.id) } },
+          transaction: t,
+        });
+      }
+
+      // (2) 只插入真正新的檔案
       const newFiles = files.filter(f => f.uuid && !existingUUIDs.has(f.uuid));
       if (newFiles.length > 0) {
         await AttachmentFile.bulkCreate(

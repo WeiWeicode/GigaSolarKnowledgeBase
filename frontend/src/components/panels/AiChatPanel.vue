@@ -215,6 +215,37 @@
             >{{ cmd.label }}</el-button>
           </div>
 
+          <!-- 檢索嚴謹度拉桿區（僅 chat 模式顯示） -->
+          <div v-if="currentMode === 'chat'" class="search-strictness-bar">
+            <div class="strictness-header">
+              <span class="strictness-label">
+                資料撈取：
+                <strong class="strictness-value-text">{{ strictnessLabel }}</strong>
+              </span>
+              <el-tooltip
+                content="寬鬆：AI 取得資料較多，會思考較久；嚴謹：精準篩選資料"
+                placement="top"
+                effect="dark"
+              >
+                <span class="info-pop-icon">!</span>
+              </el-tooltip>
+            </div>
+            <div class="strictness-slider-wrapper">
+              <span class="slider-node-label">寬鬆</span>
+              <el-slider
+                v-model="strictnessLevel"
+                :min="1"
+                :max="10"
+                :step="1"
+                :show-tooltip="true"
+                :format-tooltip="formatStrictnessTooltip"
+                size="small"
+                class="strictness-slider"
+              />
+              <span class="slider-node-label">嚴謹</span>
+            </div>
+          </div>
+
           <div class="input-row">
             <el-input
               v-if="currentMode !== 'correct'"
@@ -314,6 +345,39 @@ const fileInputRef = ref(null)
 const inputRef     = ref(null)
 const selectedFile = ref(null)
 const fileError    = ref('')
+
+// ── 檢索嚴謹度 (10個等級：1=寬鬆 ~ 10=嚴謹) ──────────────────
+const strictnessLevel = ref(5)
+
+const strictnessLabels = [
+  '極寬鬆', '最寬鬆', '寬鬆', '稍寬鬆', '中等平衡',
+  '稍嚴謹', '嚴謹', '較嚴謹', '精準', '極嚴謹'
+]
+
+const strictnessLabel = computed(() => {
+  return strictnessLabels[strictnessLevel.value - 1] || '中等平衡'
+})
+
+function formatStrictnessTooltip(val) {
+  return `等級 ${val}：${strictnessLabels[val - 1] || ''}`
+}
+
+// 根據拉桿等級 (1~10) 動態計算 API 參數
+// top_k: 50 => 5
+// score_threshold: 0.1 => 0.7
+// ai_summary_score_threshold: 0.1 => 0.6
+const computedRAGParams = computed(() => {
+  const L = strictnessLevel.value
+  const top_k = Math.round(50 - (L - 1) * (45 / 9))
+  const score_threshold = Number((0.1 + (L - 1) * (0.6 / 9)).toFixed(2))
+  const ai_summary_score_threshold = Number((0.1 + (L - 1) * (0.5 / 9)).toFixed(2))
+
+  return {
+    top_k,
+    score_threshold,
+    ai_summary_score_threshold,
+  }
+})
 
 // # mention
 const showMentionDropdown = ref(false)
@@ -820,6 +884,7 @@ async function sendMessage() {
             externalUser,
             params: {
               search_type: 'semantic_hybrid',
+              ...computedRAGParams.value,
             },
           },
           {
@@ -1168,6 +1233,53 @@ async function sendMessage() {
 .file-error { font-size: 12px; color: var(--el-color-danger); }
 
 .context-toggle { font-size: 12px; }
+
+/* 檢索嚴謹度拉桿樣式 */
+.search-strictness-bar {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 6px 10px;
+  background: var(--color-surface-2, #f8fafc);
+  border-radius: 8px;
+  border: 1px solid var(--color-border, #e2e8f0);
+}
+.strictness-header {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.strictness-label {
+  font-size: 12px; color: var(--color-text-secondary, #475569);
+  display: flex; align-items: center; gap: 4px;
+}
+.strictness-value-text {
+  color: var(--el-color-primary, #409eff);
+  font-weight: 600;
+}
+.info-pop-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--el-color-primary-light-9, #ecf5ff);
+  color: var(--el-color-primary, #409eff);
+  font-size: 11px; font-weight: bold;
+  cursor: help;
+  border: 1px solid var(--el-color-primary-light-6, #b3d8ff);
+  transition: all 0.2s ease;
+  user-select: none;
+}
+.info-pop-icon:hover {
+  background: var(--el-color-primary, #409eff);
+  color: #ffffff;
+}
+.strictness-slider-wrapper {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 4px;
+}
+.slider-node-label {
+  font-size: 11px; color: var(--color-text-muted, #94a3b8);
+  white-space: nowrap; font-weight: 500;
+}
+.strictness-slider {
+  flex: 1;
+  --el-slider-main-bg-color: var(--el-color-primary, #409eff);
+}
 
 .input-row { display: flex; gap: 8px; align-items: stretch; }
 .input-row :deep(.el-textarea) { flex: 1; }

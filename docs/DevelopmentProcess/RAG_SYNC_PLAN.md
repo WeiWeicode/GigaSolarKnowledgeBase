@@ -420,7 +420,7 @@ QDRANT_COLLECTION=         # 使用者另外提供的 collection 名稱
 #### 🔑 GET `/api/v1/rag-sync-content/article/:id`
 供 AiRAG 拉取文章內容。回傳 Markdown 全文與比對用 metadata。**若該文章 `is_published=false`，一律回傳 `404`，不回傳內容**（見「10. 外部審查意見採納紀錄」第 4 點，防止已下架/草稿內容被猜 ID 存取）。路徑本身維持 `article/:id`（見 9 節第 3 項與 `MULTI_APP_RAG_SYNC_PLAN.md` 2.4 節 App Registry，AiRAG 端已原樣登錄此路徑，不需改名）。
 
-**Response（成功）**（⚙️v1.4對齊 `MULTI_APP_RAG_SYNC_PLAN.md` 2.2 節契約，補上 `appId`/`docType`/`sourceId`，`versionNumber` 更名為 `version`）
+**Response（成功）**（⚙️v1.4對齊 `MULTI_APP_RAG_SYNC_PLAN.md` 2.2 節契約，補上 `appId`/`docType`/`sourceId`，`versionNumber` 更名為 `version`；⚙️v1.5新增 `tags`/`class`/`linksTo`）
 ```json
 {
   "appId": "kb",
@@ -430,6 +430,9 @@ QDRANT_COLLECTION=         # 使用者另外提供的 collection 名稱
   "content": "# Markdown 全文...",
   "version": 3,
   "updatedAt": "2026-07-20T08:00:00Z",
+  "tags": ["測試數據", "測試TAG"],
+  "class": ["通用"],
+  "linksTo": ["圖片測試"],
   "permissions": {
     "isPublic": false,
     "accessDept": "IT01",
@@ -438,11 +441,12 @@ QDRANT_COLLECTION=         # 使用者另外提供的 collection 名稱
   }
 }
 ```
+`tags`（⚙️v1.5新增）為文章已套用的標籤名稱陣列（來源 `Article.Tags`）；`class` 為文章所在目錄捷徑節點的父層目錄 `label` 陣列（來源 `Directory`，即畫面上「所屬目錄」欄位）；`linksTo` 為關聯附件標題陣列（來源 `Article.Attachments`，即畫面上「附件」欄位）。三者對應寫入 Qdrant point payload 的 `tags`／`class`／`links_to` 欄位（見本節第 4 點）。
 
 #### 🔑 GET `/api/v1/rag-sync-content/attachment-file/:id`
 供 AiRAG 拉取附件檔案二進位（直接以 `storage_path` 串流檔案，KB 後端不做文字抽取——切分策略是 AiRAG 的職責）。**若所屬 `Attachment` 的 `is_published=false`，一律回傳 `404`。**路徑本身維持 `attachment-file/:id`（同上，AiRAG 端已原樣登錄）。
 
-**Response**：`Content-Type` 依 `mime_type` 設定，Body 為檔案二進位；並在 Header 附上 `X-Doc-App-Id`（⚙️v1.4新增，固定值 `kb`）、`X-Doc-Version`、`X-Doc-Updated-At`、`X-Doc-Is-Public`、`X-Doc-Access-Dept`、`X-Doc-Access-Level`、`X-Doc-Access-Members`（JSON 字串陣列）供 AiRAG 讀取 metadata（不需另外呼叫一次 JSON API）。
+**Response**：`Content-Type` 依 `mime_type` 設定，Body 為檔案二進位；並在 Header 附上 `X-Doc-App-Id`（⚙️v1.4新增，固定值 `kb`）、`X-Doc-Version`、`X-Doc-Updated-At`、`X-Doc-Is-Public`、`X-Doc-Access-Dept`、`X-Doc-Access-Level`、`X-Doc-Access-Members`（JSON 字串陣列）、`X-Doc-Tags`、`X-Doc-Class`、`X-Doc-Links-To`（⚙️v1.5新增，三者皆為 `encodeURIComponent(JSON.stringify(string[]))` 編碼字串，避免中文字元造成 Header 問題，語意同文章端點的 `tags`/`class`/`linksTo`，來源分別為 `Attachment.Tags`／所在目錄父層 `label`／`Attachment.Articles`）供 AiRAG 讀取 metadata（不需另外呼叫一次 JSON API）。
 
 ---
 
@@ -496,6 +500,7 @@ QDRANT_COLLECTION=         # 使用者另外提供的 collection 名稱
    （皆需帶 Header `X-RAG-Sync-Key`，見 4.4）取得要切分的原始內容。⚙️v1.4新增：這兩個路徑**不是**通用命名（`docs/:id`、`attachments/:id`），是 KB 專屬命名；已在 AiRAG 端的 `app_registrations` App Registry 為 `app_id="kb"` 原樣登錄這兩個路徑樣板（見 `MULTI_APP_RAG_SYNC_PLAN.md` 2.4 節），KB 端不需要為了跟其他 App 統一命名而修改路徑。
 3. **舊 chunk 清理（⚙️v1.1新增，必要）**：收到 `action='upsert'` 時，**必須先依 `doc_type + source_id` 刪除 Qdrant 中該文件所有既有 point，再寫入新切分出的 point**。若省略這一步，當某次更新讓 chunk 數變少（例如 10 個減為 8 個），只做 upsert 會讓舊版第 9、10 個 point 殘留在 Qdrant 並持續被搜尋到，回傳已刪除或過期的段落內容。
 4. **Point payload 新增欄位**：每個 Qdrant point 的 payload 需包含 `app_id`（⚙️v1.4新增，固定值 `"kb"`，由 AiRAG 依觸發請求的 `appId` 自動寫入，**KB 端不需額外處理**，僅為需求清單補齊——遺漏此欄位會讓 `MULTI_APP_RAG_SYNC_PLAN.md` 2.4 節定義的「先依 `app_id`+`doc_type`+`source_id` 刪除舊 point 再 upsert」清理機制對 KB 資料失效或誤刪到其他 App 的資料）、`doc_type`（`article`/`attachment_file`）、`source_id`、`version`、`updated_date`、`is_public`、`access_dept`、`access_level`、`access_members`（⚙️v1.1新增，字串陣列，指定可存取的員工工號清單，來源為 KB DB 的 `access_members` 欄位），供 KB 後端排程比對，也供未來 RAG 檢索做權限過濾用。若遺漏 `access_members`，被指定授權但不屬於 `access_dept`/`access_level` 範圍的使用者，日後在 RAG 問答中會查不到他原本有權限看的文件。
+   **⚙️v1.5新增**：`tags`、`class`、`links_to` 三欄位過去固定寫入 `[]`（僅圖片 chunk 會自動附加 `"圖片"` 標籤），現改為 AiRAG 直接採用 KB 內容端點回傳的 `tags`/`class`/`linksTo`（文章）或 `X-Doc-Tags`/`X-Doc-Class`/`X-Doc-Links-To`（附件檔案，見 5.1、5.2 節）寫入，文字 chunk 的 `tags` 為 KB 標籤與圖片標記的合併結果（去重）；`class`/`links_to` 則整份文件所有 chunk 共用同一份陣列。KB 端無需再手動呼叫 AiRAG 既有的 `files/update-links`、`files/update-attachments` 管理端點補值。
 5. **進度回報（直連 KB DB，含防競態條件）**：使用者已決議由 AiRAG 直接連線 KB DB 寫入（見 6.4 安全建議），操作對象僅限 `rag_sync_status`、`rag_sync_logs` 兩張表：
    - 開始處理：`UPDATE rag_sync_status SET status='processing' WHERE source_type=? AND source_id=?`
    - 成功：

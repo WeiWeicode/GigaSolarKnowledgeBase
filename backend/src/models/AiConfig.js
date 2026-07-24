@@ -49,6 +49,42 @@ const AiConfig = sequelize.define('AiConfig', {
     defaultValue: 'llama.cpp',
     comment: 'AI 工具/提供者名稱（例如：llama.cpp, vllm, ollama）',
   },
+  active_env: {
+    type: DataTypes.STRING(20),
+    allowNull: false,
+    defaultValue: 'prod',
+    comment: '當前啟用環境：prod (生產區) 或 test (測試區)',
+  },
+  prod_api_key: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    comment: '生產區 AiRAG Chat API Key',
+  },
+  prod_knowledge_base_id: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    comment: '生產區 AiRAG 知識庫 ID',
+  },
+  dev_api_key: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    comment: '測試區 AiRAG Chat API Key',
+  },
+  dev_knowledge_base_id: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    comment: '測試區 AiRAG 知識庫 ID',
+  },
+  knowledge_base_id: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    comment: '相容舊版 AiRAG 知識庫 ID',
+  },
+  api_key: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    comment: '相容舊版 AiRAG Chat API Key',
+  },
   created_at: {
     type: DataTypes.DATE,
     allowNull: false,

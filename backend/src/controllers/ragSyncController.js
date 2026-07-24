@@ -7,7 +7,7 @@
 const fs   = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
-const { Article, Attachment, AttachmentFile, RagSyncStatus, RagSyncLog } = require('../models');
+const { Article, Attachment, AttachmentFile, RagSyncStatus, RagSyncLog, Tag, Directory } = require('../models');
 const ragSyncService = require('../services/ragSyncService');
 const { normalizeAccessMembers } = require('../helpers/accessHelper');
 
@@ -163,11 +163,25 @@ async function runAudit(req, res) {
 async function getArticleContent(req, res) {
   try {
     const { id } = req.params;
-    const article = await Article.findByPk(id);
+    const article = await Article.findByPk(id, {
+      include: [{ model: Tag, through: { attributes: [] }, as: 'Tags' }],
+    });
 
     if (!article || !article.is_published) {
       return res.status(404).json({ success: false, message: '找不到文章或文章尚未上架' });
     }
+
+    // 所屬目錄（class）：文章捷徑節點的父層目錄 label
+    const dirNodes = await Directory.findAll({
+      where: { article_id: article.id, type: 'article' },
+      attributes: ['parent_id'],
+    });
+    const parentDirs = dirNodes.length
+      ? await Directory.findAll({ where: { id: dirNodes.map(d => d.parent_id) }, attributes: ['label'] })
+      : [];
+
+    // 關聯附件（links_to）
+    const linkedAttachments = await article.getAttachments({ attributes: ['title'] });
 
     return res.json({
       appId:   'kb',
@@ -177,6 +191,9 @@ async function getArticleContent(req, res) {
       content: article.content,
       version: article.version_number,
       updatedAt: article.updated_at,
+      tags:    article.Tags.map(t => t.name),
+      class:   parentDirs.map(d => d.label),
+      linksTo: linkedAttachments.map(a => a.title),
       permissions: {
         isPublic:      article.is_public,
         accessDept:    article.access_dept || null,
@@ -211,6 +228,20 @@ async function getAttachmentFileContent(req, res) {
       return res.status(404).json({ success: false, message: '實體檔案不存在' });
     }
 
+    const tags = await attachment.getTags({ attributes: ['name'] });
+
+    // 所屬目錄（class）：附件捷徑節點的父層目錄 label
+    const dirNodes = await Directory.findAll({
+      where: { attachment_id: attachment.id, type: 'attachment' },
+      attributes: ['parent_id'],
+    });
+    const parentDirs = dirNodes.length
+      ? await Directory.findAll({ where: { id: dirNodes.map(d => d.parent_id) }, attributes: ['label'] })
+      : [];
+
+    // 關聯文章（links_to）
+    const linkedArticles = await attachment.getArticles({ attributes: ['title'] });
+
     res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
     res.setHeader('X-Doc-App-Id', 'kb');
     res.setHeader('X-Doc-Version', String(attachment.version_number));
@@ -219,6 +250,10 @@ async function getAttachmentFileContent(req, res) {
     res.setHeader('X-Doc-Access-Dept', attachment.access_dept || '');
     res.setHeader('X-Doc-Access-Level', attachment.access_level === null || attachment.access_level === undefined ? '' : String(attachment.access_level));
     res.setHeader('X-Doc-Access-Members', JSON.stringify(normalizeAccessMembers(attachment.access_members)));
+    // 中文字元需 encodeURIComponent，避免 HTTP header 非 ASCII 字元問題，AiRAG 端需對應 unquote 解碼
+    res.setHeader('X-Doc-Tags', encodeURIComponent(JSON.stringify(tags.map(t => t.name))));
+    res.setHeader('X-Doc-Class', encodeURIComponent(JSON.stringify(parentDirs.map(d => d.label))));
+    res.setHeader('X-Doc-Links-To', encodeURIComponent(JSON.stringify(linkedArticles.map(a => a.title))));
 
     fs.createReadStream(filePath).pipe(res);
   } catch (error) {

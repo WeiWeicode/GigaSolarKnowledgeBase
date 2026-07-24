@@ -8,31 +8,60 @@
 import { aiService } from './api.js'
 
 // ── 預設設定 ──────────────────────────────────────────────────
-export const AIRAG_BASE_URL = 'http://10.10.130.45:53020/api'
+// 自動偵測主機：本地開發 (localhost) 或生產環境，埠號固定為 53020
+const _aiRagHost = typeof window !== 'undefined' && window.location?.hostname ? window.location.hostname : '10.10.130.45'
+export const AIRAG_BASE_URL = `http://${_aiRagHost}:53020/api`
 
-// 請在此處填入預設 API Key（未來將支援依部門由資料庫動態帶入）
-export const DEFAULT_API_KEY = '2XbYokoRla0C54vs_xoXUGGwxtsGLBjAQB8W-2O4OXQ'
+// 降級備用 API Key 與 知識庫 ID
+export const DEFAULT_API_KEY = 'ZNFM27RGnDKXI66-K6dxq5eGHI5V8WMHcwS8tWQN5-4'
+export const KNOWLEDGE_BASE_ID = '6a6020afca0400ef553cc075'
 
-// 預設知識庫 ID（作為後端 API 連線失敗或未設定時的降級備用值）
-export const KNOWLEDGE_BASE_ID = ''
-
-let cachedKnowledgeBaseId = null
+let cachedConfig = null
 
 /**
- * 向 KB 後端取得知識庫 ID（包含快取機制）
+ * 清除 AI 配置快取（供管理員變更設定時呼叫，即時套用新 Key / 環境）
  */
-export async function getKnowledgeBaseId() {
-  if (cachedKnowledgeBaseId) return cachedKnowledgeBaseId
+export function clearAiConfigCache() {
+  cachedConfig = null
+}
+
+/**
+ * 向 KB 後端取得 AI 配置（包含快取機制）
+ */
+export async function getAiConfigFromBackend() {
+  if (cachedConfig) return cachedConfig
   try {
     const res = await aiService.getConfig()
-    if (res?.knowledgeBaseId) {
-      cachedKnowledgeBaseId = res.knowledgeBaseId
-      return cachedKnowledgeBaseId
+    if (res) {
+      cachedConfig = {
+        knowledgeBaseId: res.knowledgeBaseId || KNOWLEDGE_BASE_ID,
+        apiKey: res.apiKey || DEFAULT_API_KEY,
+      }
+      return cachedConfig
     }
   } catch (err) {
-    console.warn('[AiRAGApi] 取得知識庫 ID 失敗，使用備用預設值:', err)
+    console.warn('[AiRAGApi] 取得 AI 配置失敗，使用備用預設值:', err)
   }
-  return KNOWLEDGE_BASE_ID
+  return {
+    knowledgeBaseId: KNOWLEDGE_BASE_ID,
+    apiKey: DEFAULT_API_KEY,
+  }
+}
+
+/**
+ * 向 KB 後端取得知識庫 ID
+ */
+export async function getKnowledgeBaseId() {
+  const config = await getAiConfigFromBackend()
+  return config.knowledgeBaseId
+}
+
+/**
+ * 向 KB 後端取得 API Key
+ */
+export async function getAiApiKey() {
+  const config = await getAiConfigFromBackend()
+  return config.apiKey
 }
 
 /**
@@ -53,7 +82,7 @@ export async function getKnowledgeBaseId() {
  * @param {Object} [payload.params] - 其他檢索與 LLM 參數 (search_type, top_k, score_threshold, custom_system_prompt 等)
  *
  * @param {Object} [options] 控制選項與 Callback
- * @param {string} [options.apiKey] - 自訂 API Key（若未傳入則使用 DEFAULT_API_KEY）
+ * @param {string} [options.apiKey] - 自訂 API Key（若未傳入則動態向後端取得）
  * @param {string} [options.baseUrl] - 自訂 Base URL（若未傳入則使用 AIRAG_BASE_URL）
  * @param {AbortSignal} [options.signal] - 用於中途取消請求的 AbortSignal
  * @param {Function} [options.onStep] - 收到進度事件時的回呼 (data: { step, status, content, candidates? })
@@ -66,7 +95,7 @@ export async function getKnowledgeBaseId() {
  * @returns {Promise<{ answer: string, sources: Array, attachments: Array, isEarlyTerminated: boolean }>} 完成後的完整結果
  */
 export async function sendExternalChat(payload, options = {}) {
-  const apiKey = options.apiKey || DEFAULT_API_KEY
+  const apiKey = options.apiKey || (await getAiApiKey())
   const baseUrl = options.baseUrl || AIRAG_BASE_URL
 
   let {

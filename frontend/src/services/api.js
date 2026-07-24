@@ -990,11 +990,18 @@ async function readSSEStream(response, { onThinking, onDelta, onDone, onError } 
 
 export const aiService = {
   /**
-   * 取得 AI 配置資訊（如知識庫 ID）
+   * 取得 AI 配置資訊（如知識庫 ID、API Key）
    */
   async getConfig() {
     const res = await http.get('/ai/config')
-    return res.data  // { knowledgeBaseId }
+    return res.data  // { knowledgeBaseId, apiKey }
+  },
+
+  /**
+   * 更新 AI 配置資訊（知識庫 ID、API Key）
+   */
+  async updateConfig(payload) {
+    return await http.post('/ai/config', payload)
   },
 
   /**

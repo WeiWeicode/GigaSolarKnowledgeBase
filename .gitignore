@@ -12,6 +12,8 @@ dist
 dist-ssr
 *.local
 backend/uploads/
+gigaKS/
+資料庫/
 
 # Editor directories and files
 .vscode/*

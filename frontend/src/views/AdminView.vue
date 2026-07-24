@@ -168,6 +168,61 @@
         </div>
       </el-tab-pane>
 
+      <!-- API Key Settings -->
+      <el-tab-pane label="API Key 設定" name="apiKey">
+        <div class="kb-card tab-card" v-loading="apiKeyConfigLoading">
+          <h3 class="card-title">AiRAG 存取金鑰與知識庫配置</h3>
+
+          <!-- 當前切換環境選擇 -->
+          <div class="field-group env-switch-group">
+            <label class="field-label font-bold">當前啟用系統環境：</label>
+            <el-radio-group v-model="apiKeyConfig.activeEnv" size="default">
+              <el-radio-button label="prod">生產區 (Production)</el-radio-button>
+              <el-radio-button label="test">測試區 (Test / Dev)</el-radio-button>
+            </el-radio-group>
+            <p class="storage-hint mt-8">切換後，系統 API 呼叫將自動使用該環境之 API Key 與 知識庫 ID</p>
+          </div>
+
+          <el-divider content-position="left">生產區 (Production) 設定</el-divider>
+          <div class="field-group">
+            <label class="field-label">生產區 Chat API Key</label>
+            <el-input
+              v-model="apiKeyConfig.prodApiKey"
+              placeholder="請輸入生產區 AiRAG Chat API Key"
+              show-password
+            />
+          </div>
+          <div class="field-group">
+            <label class="field-label">生產區 知識庫 ID (Knowledge Base ID)</label>
+            <el-input
+              v-model="apiKeyConfig.prodKnowledgeBaseId"
+              placeholder="例如：6a6020afca0400ef553cc075"
+            />
+          </div>
+
+          <el-divider content-position="left">測試區 (Test / Dev) 設定</el-divider>
+          <div class="field-group">
+            <label class="field-label">測試區 Chat API Key</label>
+            <el-input
+              v-model="apiKeyConfig.devApiKey"
+              placeholder="請輸入測試區 AiRAG Chat API Key"
+              show-password
+            />
+          </div>
+          <div class="field-group">
+            <label class="field-label">測試區 知識庫 ID (Knowledge Base ID)</label>
+            <el-input
+              v-model="apiKeyConfig.devKnowledgeBaseId"
+              placeholder="例如：6a6020afca0400ef553cc075_test"
+            />
+          </div>
+
+          <el-button type="primary" :loading="apiKeyConfigSaving" class="mt-16" @click="saveApiKeyConfig">
+            儲存 API Key 設定
+          </el-button>
+        </div>
+      </el-tab-pane>
+
       <!-- RAG Sync Schedule -->
       <el-tab-pane label="RAG 同步排程" name="ragSchedule">
         <div class="kb-card tab-card" v-loading="ragConfigLoading">
@@ -204,14 +259,14 @@
         <div class="kb-card tab-card">
           <h3 class="card-title">同步狀態列表</h3>
           <div class="rag-filter-bar">
-            <el-select v-model="ragStatusFilter.status" placeholder="狀態" clearable style="width:140px" @change="loadRagStatusList">
-              <el-option label="未同步" value="not_synced" />
-              <el-option label="已過期" value="outdated" />
-              <el-option label="處理中" value="processing" />
-              <el-option label="已完成" value="completed" />
-              <el-option label="失敗" value="failed" />
-              <el-option label="下架未刪除" value="unpublished_kept" />
-              <el-option label="下架已刪除" value="unpublished_deleted" />
+            <el-select v-model="ragStatusFilter.status" placeholder="狀態" clearable style="width:160px" @change="loadRagStatusList">
+              <el-option label="AI 待處理" value="not_synced" />
+              <el-option label="AI 待更新" value="outdated" />
+              <el-option label="AI 處理中" value="processing" />
+              <el-option label="AI 已就緒" value="completed" />
+              <el-option label="AI 處理失敗" value="failed" />
+              <el-option label="已下架 (保留問答)" value="unpublished_kept" />
+              <el-option label="已下架 (移除問答)" value="unpublished_deleted" />
             </el-select>
             <el-select v-model="ragStatusFilter.sourceType" placeholder="類型" clearable style="width:120px" @change="loadRagStatusList">
               <el-option label="文章" value="article" />
@@ -237,9 +292,11 @@
               <template #default="{ row }">{{ ragSourceTypeLabel(row.sourceType) }}</template>
             </el-table-column>
             <el-table-column prop="title" label="標題 / 檔名" show-overflow-tooltip />
-            <el-table-column label="狀態" width="110">
+            <el-table-column label="狀態" width="130">
               <template #default="{ row }">
-                <el-tag size="small" :type="ragStatusTagType(row.status)">{{ ragStatusLabel(row.status) }}</el-tag>
+                <el-tooltip :content="ragStatusTooltip(row.status)" placement="top">
+                  <el-tag size="small" :type="ragStatusTagType(row.status)" class="cursor-pointer">{{ ragStatusLabel(row.status) }}</el-tag>
+                </el-tooltip>
               </template>
             </el-table-column>
             <el-table-column label="目標版本" prop="targetVersion" width="90" />
@@ -335,7 +392,8 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { metaService, tagService, colleagueService, ragSyncService } from '@/services/api.js'
+import { metaService, tagService, colleagueService, ragSyncService, aiService } from '@/services/api.js'
+import { clearAiConfigCache } from '@/services/AiRAGApi.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const activeTab   = ref('company')
@@ -362,6 +420,17 @@ const aiConfig = ref({
   systemPrompt: '你是集團知識庫的 AI 助手，請以繁體中文回答，並根據所給的文章內容提供準確的資訊。',
   // TODO: 後端補 GET/PATCH /api/v1/admin/ai-config 端點
 })
+
+// ── API Key 設定 ─────────────────────────────────────────────
+const apiKeyConfig = reactive({
+  activeEnv: 'prod',
+  prodApiKey: '',
+  prodKnowledgeBaseId: '',
+  devApiKey: '',
+  devKnowledgeBaseId: '',
+})
+const apiKeyConfigLoading = ref(false)
+const apiKeyConfigSaving  = ref(false)
 
 // ── RAG 同步排程 ─────────────────────────────────────────────
 const ragConfig = reactive({
@@ -449,13 +518,63 @@ function saveAiConfig() {
   ElMessage.warning('AI 設定儲存功能建置中，尚未串接後端')
 }
 
+// ── API Key 設定 ─────────────────────────────────────────────
+async function loadApiKeyConfig() {
+  apiKeyConfigLoading.value = true
+  try {
+    const data = await aiService.getConfig()
+    if (data) {
+      apiKeyConfig.activeEnv = data.activeEnv || 'prod'
+      apiKeyConfig.prodApiKey = data.prodApiKey || ''
+      apiKeyConfig.prodKnowledgeBaseId = data.prodKnowledgeBaseId || ''
+      apiKeyConfig.devApiKey = data.devApiKey || ''
+      apiKeyConfig.devKnowledgeBaseId = data.devKnowledgeBaseId || ''
+    }
+  } catch (e) {
+    ElMessage.error('API Key 設定載入失敗：' + (e.message || ''))
+  } finally {
+    apiKeyConfigLoading.value = false
+  }
+}
+
+async function saveApiKeyConfig() {
+  apiKeyConfigSaving.value = true
+  try {
+    await aiService.updateConfig({
+      activeEnv: apiKeyConfig.activeEnv,
+      prodApiKey: apiKeyConfig.prodApiKey,
+      prodKnowledgeBaseId: apiKeyConfig.prodKnowledgeBaseId,
+      devApiKey: apiKeyConfig.devApiKey,
+      devKnowledgeBaseId: apiKeyConfig.devKnowledgeBaseId,
+    })
+    clearAiConfigCache()
+    ElMessage.success('API Key 設定已成功儲存')
+    await loadApiKeyConfig()
+  } catch (e) {
+    ElMessage.error('儲存失敗：' + (e.message || ''))
+  } finally {
+    apiKeyConfigSaving.value = false
+  }
+}
+
 // ── RAG 同步：狀態顯示輔助 ───────────────────────────────────
 function ragStatusLabel(status) {
   return {
-    not_synced: '未同步', outdated: '已過期', processing: '處理中',
-    completed: '已完成', failed: '失敗',
-    unpublished_kept: '下架未刪除', unpublished_deleted: '下架已刪除',
+    not_synced: 'AI 待處理', outdated: 'AI 待更新', processing: 'AI 處理中',
+    completed: 'AI 已就緒', failed: 'AI 處理失敗',
+    unpublished_kept: '已下架 (保留問答)', unpublished_deleted: '已下架 (移除問答)',
   }[status] || status
+}
+function ragStatusTooltip(status) {
+  return {
+    not_synced: 'AI 尚未處理此資料',
+    outdated: '內容已修改，等待 AI 重新處理更新',
+    processing: 'AI 正在將資料處理中',
+    completed: 'AI 已經處理完成，可於問答中詢問',
+    failed: 'AI 向量處理失敗，請告知資訊人員',
+    unpublished_kept: '內容已下架，但保留 AI 檢索功能',
+    unpublished_deleted: '內容已下架，並已移除 AI 檢索資料',
+  }[status] || 'AI 尚未處理此資料'
 }
 function ragStatusTagType(status) {
   return {
@@ -591,6 +710,7 @@ onMounted(async () => {
     usersLoading.value = false
   }
 
+  await loadApiKeyConfig()
   await loadRagConfig()
   await loadRagStatusList()
   await loadRagLogs()

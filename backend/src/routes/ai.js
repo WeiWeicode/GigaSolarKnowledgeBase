@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const multer     = require('multer');
 const { authMiddleware }           = require('../middlewares/auth');
-const { summarize, writingAssist, getAiConfig } = require('../controllers/aiController');
+const { summarize, writingAssist, getAiConfig, saveAiConfig } = require('../controllers/aiController');
 const { SYNCABLE_MIME_TYPES }      = require('../helpers/fileTypeHelper');
 
 const router = Router();
@@ -31,6 +31,7 @@ function handleUploadError(err, req, res, next) {
 }
 
 router.get('/config',          authMiddleware, getAiConfig);
+router.post('/config',         authMiddleware, saveAiConfig);
 router.post('/summarize',      authMiddleware, summarize);
 router.post('/writing-assist', authMiddleware, upload.single('file'), handleUploadError, writingAssist);
 
