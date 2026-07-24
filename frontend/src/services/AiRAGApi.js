@@ -12,8 +12,8 @@ import { aiService } from './api.js'
 const _isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
 const _aiRagHost = _isLocal ? 'localhost' : '10.10.130.45'
 export const AIRAG_BASE_URL = `http://${_aiRagHost}:53020/api`
-
-
+export const DEFAULT_API_KEY = ''
+export const KNOWLEDGE_BASE_ID = ''
 
 let cachedConfig = null
 
@@ -126,7 +126,7 @@ export async function sendExternalChat(payload, options = {}) {
     chat_history: chatHistory,
     selected_db_profile_id: selectedDbProfileId,
     params: {
-      search_type: params.search_type || 'semantic_hybrid',
+      search_type: params.search_type || 'KB_semantic_hybrid',
       // 知識庫檢索情境下模型思考過程（reasoning）可能耗費大量 token，
       // 預設值 1024 常在正式回答（content）尚未產生前就被截斷，故提高預設上限
       max_tokens: params.max_tokens || 60000,

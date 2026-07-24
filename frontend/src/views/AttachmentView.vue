@@ -448,10 +448,27 @@ const dirPickerTree = computed(() => {
   }
   return filterDirs(dirStore.filteredTree)
 })
+const deptDirIds = computed(() => {
+  const ids = new Set()
+  function collect(nodes) {
+    if (!nodes) return
+    for (const node of nodes) {
+      if (node.type === 'directory') ids.add(node.id)
+      if (node.children) collect(node.children)
+    }
+  }
+  collect(dirStore.filteredTree)
+  return ids
+})
+
 const filteredArticles = computed(() => {
-  // 後端 Article 目前不回傳 directoryIds（B-03），暗時顯示所有已上架文章
-  // TODO：待 B-03 補充後可恢復目錄範圍過濾
-  return allArticles.value.filter(art => art.isPublished !== false)
+  const allowedDirIds = deptDirIds.value
+  return allArticles.value.filter(art => {
+    if (art.isPublished === false) return false
+    if (form.linkedArticleIds.includes(art.id)) return true
+    if (!art.directoryIds || art.directoryIds.length === 0) return true
+    return art.directoryIds.some(dId => allowedDirIds.has(dId))
+  })
 })
 const canEdit = computed(() => {
   if (dirStore.viewScope === 'public' || !attachment.value) return false

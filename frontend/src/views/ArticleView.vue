@@ -439,10 +439,27 @@ const aiAllowedModes = computed(() => {
   return ['chat']
 })
 
+const deptDirIds = computed(() => {
+  const ids = new Set()
+  function collect(nodes) {
+    if (!nodes) return
+    for (const node of nodes) {
+      if (node.type === 'directory') ids.add(node.id)
+      if (node.children) collect(node.children)
+    }
+  }
+  collect(dirStore.filteredTree)
+  return ids
+})
+
 const filteredAttachments = computed(() => {
-  // 後端 Attachment 不回傳 directories，直接顯示所有可存取的附件
-  // TODO：待 B-03 後端補充 directoryIds 後，可再恙復目錄範圍過濾
-  return allAttachments.value.filter(att => att.isPublished !== false)
+  const allowedDirIds = deptDirIds.value
+  return allAttachments.value.filter(att => {
+    if (att.isPublished === false) return false
+    if (form.attachmentIds.includes(att.id)) return true
+    if (!att.directoryIds || att.directoryIds.length === 0) return true
+    return att.directoryIds.some(dId => allowedDirIds.has(dId))
+  })
 })
 const canEdit = computed(() => {
   if (dirStore.viewScope === 'public' || !article.value || route.query.version) return false

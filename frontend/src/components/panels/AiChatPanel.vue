@@ -883,7 +883,6 @@ async function sendMessage() {
             question,
             externalUser,
             params: {
-              search_type: 'semantic_hybrid',
               ...computedRAGParams.value,
             },
           },
