@@ -76,6 +76,9 @@ async function writingAssist(req, res) {
 }
 
 // GET /api/v1/ai/config
+// 注意：此端點同時給「一般使用者聊天面板」與「管理員 API Key 設定頁」共用。
+// 一般使用者僅能拿到目前生效的 apiKey/knowledgeBaseId（聊天需要），
+// 完整的 prod/dev/ingest 金鑰明碼僅回傳給 ADMIN，避免任何登入使用者都能讀到金鑰。
 async function getAiConfig(req, res) {
   try {
     const activeDbConfig = await AiConfig.findOne({
@@ -87,28 +90,38 @@ async function getAiConfig(req, res) {
 
     const activeEnv = activeDbConfig?.active_env || 'prod';
 
-    const prodApiKey = activeDbConfig?.prod_api_key || activeDbConfig?.api_key || process.env.AIRAG_CHAT_API_KEY || 'ZNFM27RGnDKXI66-K6dxq5eGHI5V8WMHcwS8tWQN5-4';
-    const prodKnowledgeBaseId = activeDbConfig?.prod_knowledge_base_id || activeDbConfig?.knowledge_base_id || process.env.AIRAG_KNOWLEDGE_BASE_ID || '6a6020afca0400ef553cc075';
+    const prodApiKey = activeDbConfig?.prod_api_key || activeDbConfig?.api_key || process.env.AIRAG_CHAT_API_KEY || '';
+    const prodKnowledgeBaseId = activeDbConfig?.prod_knowledge_base_id || activeDbConfig?.knowledge_base_id || process.env.AIRAG_KNOWLEDGE_BASE_ID || '';
 
     const devApiKey = activeDbConfig?.dev_api_key || '';
     const devKnowledgeBaseId = activeDbConfig?.dev_knowledge_base_id || '';
 
-    // 根據當前啟用的環境 (prod 或 test) 自動選擇當前要使用的 apiKey 與 knowledgeBaseId
+    // Ingest Key 與 Chat Key 是 AiRAG 端不同 scope 的獨立金鑰，不可互相 fallback
+    const ingestApiKey = activeDbConfig?.ingest_api_key || process.env.AIRAG_INGEST_API_KEY || '';
+    const devIngestApiKey = activeDbConfig?.dev_ingest_api_key || '';
+
+    // 根據當前啟用的環境 (prod 或 test) 自動選擇當前要使用的 apiKey 與 knowledgeBaseId（聊天用）
     const currentApiKey = activeEnv === 'test' ? (devApiKey || prodApiKey) : prodApiKey;
     const currentKnowledgeBaseId = activeEnv === 'test' ? (devKnowledgeBaseId || prodKnowledgeBaseId) : prodKnowledgeBaseId;
 
-    return res.json({
-      success: true,
-      data: {
-        activeEnv,
-        apiKey: currentApiKey,
-        knowledgeBaseId: currentKnowledgeBaseId,
+    const data = {
+      activeEnv,
+      apiKey: currentApiKey,
+      knowledgeBaseId: currentKnowledgeBaseId,
+    };
+
+    if (req.user?.role === 'ADMIN') {
+      Object.assign(data, {
         prodApiKey,
         prodKnowledgeBaseId,
         devApiKey,
         devKnowledgeBaseId,
-      },
-    });
+        ingestApiKey,
+        devIngestApiKey,
+      });
+    }
+
+    return res.json({ success: true, data });
   } catch (err) {
     console.error('getAiConfig error:', err.message);
     return res.status(500).json({ success: false, message: '無法取得 AI 設定' });
@@ -124,21 +137,25 @@ async function saveAiConfig(req, res) {
       prodKnowledgeBaseId,
       devApiKey,
       devKnowledgeBaseId,
+      ingestApiKey,
+      devIngestApiKey,
     } = req.body;
 
     let [configRecord] = await AiConfig.findOrCreate({
       where: { is_active: true },
       defaults: {
         config_name: 'default',
-        api_url: 'http://localhost:53020/api',
+        api_url: 'http://10.10.130.45:53020/api',
         model_name: 'default',
         is_active: true,
         ai_tool: 'AiRAG',
         active_env: activeEnv || 'prod',
-        prod_api_key: prodApiKey || 'ZNFM27RGnDKXI66-K6dxq5eGHI5V8WMHcwS8tWQN5-4',
-        prod_knowledge_base_id: prodKnowledgeBaseId || '6a6020afca0400ef553cc075',
+        prod_api_key: prodApiKey || '',
+        prod_knowledge_base_id: prodKnowledgeBaseId || '',
         dev_api_key: devApiKey || '',
         dev_knowledge_base_id: devKnowledgeBaseId || '',
+        ingest_api_key: ingestApiKey || '',
+        dev_ingest_api_key: devIngestApiKey || '',
       },
     });
 
@@ -147,6 +164,8 @@ async function saveAiConfig(req, res) {
     if (prodKnowledgeBaseId !== undefined) configRecord.prod_knowledge_base_id = prodKnowledgeBaseId;
     if (devApiKey !== undefined) configRecord.dev_api_key = devApiKey;
     if (devKnowledgeBaseId !== undefined) configRecord.dev_knowledge_base_id = devKnowledgeBaseId;
+    if (ingestApiKey !== undefined) configRecord.ingest_api_key = ingestApiKey;
+    if (devIngestApiKey !== undefined) configRecord.dev_ingest_api_key = devIngestApiKey;
 
     // 同步相容舊版欄位
     const effectiveApiKey = configRecord.active_env === 'test' ? (configRecord.dev_api_key || configRecord.prod_api_key) : configRecord.prod_api_key;
@@ -167,6 +186,8 @@ async function saveAiConfig(req, res) {
         prodKnowledgeBaseId: configRecord.prod_knowledge_base_id,
         devApiKey: configRecord.dev_api_key,
         devKnowledgeBaseId: configRecord.dev_knowledge_base_id,
+        ingestApiKey: configRecord.ingest_api_key,
+        devIngestApiKey: configRecord.dev_ingest_api_key,
       },
     });
   } catch (err) {

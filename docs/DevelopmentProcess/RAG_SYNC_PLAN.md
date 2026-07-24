@@ -5,6 +5,11 @@
 - **狀態**：KB ↔ AiRAG ↔ Qdrant 端到端已實測成功（2026-07-23，見 v1.6）。KB 端（前端 + 後端）施作完成（TASK-S1～S9、TASK-F1～F3、TASK-D1），AiRAG 端 `POST /api/external/ingest/trigger`、App Registry、內容拉取、Qdrant 寫入、`direct_db` 進度回報全部驗證可正常運作。剩餘技術債見 9 節第 6 項（AiRAG 直連 KB DB 暫用 `sa` 帳號）。
 - **建立日期**：2026-07-23
 - **修訂記錄**：
+  - v1.7（2026-07-24）正式環境部署後 `notifyChanged` 觸發切分持續回報 401，排查發現是本次施作誤把 Ingest Key 與問答用 Chat Key（`AiConfig.prod_api_key`/`dev_api_key`，透過「API Key 設定」管理頁維護）共用同一組欄位，違反 6.1 節第 8 點「金鑰分離」的原始設計，AiRAG 端以 `scope="ingest"` 驗證 hash 比對不到 Chat Key 而回 401。修正：
+    1. `AiConfig` 新增獨立欄位 `ingest_api_key`/`dev_ingest_api_key`，「API Key 設定」管理頁新增對應輸入欄位，與 Chat Key 分開管理與儲存。
+    2. `aiRagIngestClient.js` 的 `getActiveConfig()` 改為只從 `ingest_api_key`/`dev_ingest_api_key`（或 `.env` 的 `AIRAG_INGEST_API_KEY` 備援）取得 Ingest Key，不再 fallback 到 Chat Key 欄位。
+    3. 移除 `aiRagIngestClient.js`、`aiController.js` 內先前寫死於程式碼中的預設金鑰明碼 fallback（已進入 git 歷史，建議之後於 AiRAG 端輪替該把金鑰）。
+    4. `GET /api/v1/ai/config` 改為依 `req.user.role` 過濾回應：一般登入使用者（聊天面板需要呼叫此端點取得目前生效的 apiKey/knowledgeBaseId）只拿得到目前生效值，完整的 prod/dev/ingest 金鑰明碼僅回傳給 `ADMIN`；`POST /api/v1/ai/config`（寫入設定）比照 `ragSync.js` 加上 `requireRole('ADMIN')`，先前僅有 `authMiddleware` 導致任何登入使用者皆可讀寫金鑰。
   - v1.6（2026-07-23）KB ↔ AiRAG ↔ Qdrant 端到端連通測試，過程中發現並修正 5 處雙方組態落差：
     1. KB 端 `AIRAG_BASE_URL` 若帶結尾斜線會讓組出的觸發路徑變成 `//api/...` 而 404，`aiRagIngestClient.js` 補上去除結尾斜線的防呆。
     2. KB 端文章/附件的 `access_members` 部分舊資料曾被重複 `JSON.stringify`，導致取出仍是字串（如 `"[]"`）而非陣列，AiRAG 端 pydantic schema 要求陣列會 422；新增 `accessHelper.js` 的 `normalizeAccessMembers()`，`ragSyncService.js` 與內容端點皆已套用。

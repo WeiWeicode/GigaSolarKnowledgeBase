@@ -199,6 +199,15 @@
               placeholder="例如：6a6020afca0400ef553cc075"
             />
           </div>
+          <div class="field-group">
+            <label class="field-label">生產區 Ingest API Key（文章/附件切分觸發用）</label>
+            <el-input
+              v-model="apiKeyConfig.ingestApiKey"
+              placeholder="請輸入生產區 AiRAG Ingest API Key"
+              show-password
+            />
+            <p class="storage-hint">與上方 Chat API Key 是 AiRAG 端不同 scope 的獨立金鑰，不可共用</p>
+          </div>
 
           <el-divider content-position="left">測試區 (Test / Dev) 設定</el-divider>
           <div class="field-group">
@@ -214,6 +223,14 @@
             <el-input
               v-model="apiKeyConfig.devKnowledgeBaseId"
               placeholder="例如：6a6020afca0400ef553cc075_test"
+            />
+          </div>
+          <div class="field-group">
+            <label class="field-label">測試區 Ingest API Key（文章/附件切分觸發用）</label>
+            <el-input
+              v-model="apiKeyConfig.devIngestApiKey"
+              placeholder="請輸入測試區 AiRAG Ingest API Key"
+              show-password
             />
           </div>
 
@@ -428,6 +445,8 @@ const apiKeyConfig = reactive({
   prodKnowledgeBaseId: '',
   devApiKey: '',
   devKnowledgeBaseId: '',
+  ingestApiKey: '',
+  devIngestApiKey: '',
 })
 const apiKeyConfigLoading = ref(false)
 const apiKeyConfigSaving  = ref(false)
@@ -529,6 +548,8 @@ async function loadApiKeyConfig() {
       apiKeyConfig.prodKnowledgeBaseId = data.prodKnowledgeBaseId || ''
       apiKeyConfig.devApiKey = data.devApiKey || ''
       apiKeyConfig.devKnowledgeBaseId = data.devKnowledgeBaseId || ''
+      apiKeyConfig.ingestApiKey = data.ingestApiKey || ''
+      apiKeyConfig.devIngestApiKey = data.devIngestApiKey || ''
     }
   } catch (e) {
     ElMessage.error('API Key 設定載入失敗：' + (e.message || ''))
@@ -546,6 +567,8 @@ async function saveApiKeyConfig() {
       prodKnowledgeBaseId: apiKeyConfig.prodKnowledgeBaseId,
       devApiKey: apiKeyConfig.devApiKey,
       devKnowledgeBaseId: apiKeyConfig.devKnowledgeBaseId,
+      ingestApiKey: apiKeyConfig.ingestApiKey,
+      devIngestApiKey: apiKeyConfig.devIngestApiKey,
     })
     clearAiConfigCache()
     ElMessage.success('API Key 設定已成功儲存')

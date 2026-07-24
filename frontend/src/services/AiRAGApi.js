@@ -7,10 +7,10 @@
 
 import { aiService } from './api.js'
 
-// ── 預設設定 ──────────────────────────────────────────────────
-// 自動偵測主機：本地開發 (localhost) 指向 localhost，生產環境指向獨立 AiRAG 伺服器 10.10.130.45
-const _isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-const _aiRagHost = _isLocal ? 'localhost' : '10.10.130.45'
+// 依據 NODE_ENV / 環境模式判定：正式環境 (production) 指向 10.10.130.45，開發環境 (development) 指向 localhost
+const _isProd = (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production') ||
+                (typeof import.meta !== 'undefined' && (import.meta.env?.MODE === 'production' || import.meta.env?.PROD))
+const _aiRagHost = _isProd ? '10.10.130.45' : 'localhost'
 export const AIRAG_BASE_URL = `http://${_aiRagHost}:53020/api`
 export const DEFAULT_API_KEY = ''
 export const KNOWLEDGE_BASE_ID = ''

@@ -75,6 +75,16 @@ const AiConfig = sequelize.define('AiConfig', {
     allowNull: true,
     comment: '測試區 AiRAG 知識庫 ID',
   },
+  ingest_api_key: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    comment: '生產區 AiRAG Ingest API Key（切分觸發用，scope 與 Chat Key 不同，不可共用）',
+  },
+  dev_ingest_api_key: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    comment: '測試區 AiRAG Ingest API Key',
+  },
   knowledge_base_id: {
     type: DataTypes.STRING(255),
     allowNull: true,

@@ -9,6 +9,32 @@ const axios = require('axios');
 
 const TIMEOUT_MS = 8000;
 
+const { AiConfig } = require('../models');
+
+async function getActiveConfig() {
+  try {
+    const activeDbConfig = await AiConfig.findOne({ where: { is_active: true } });
+    if (activeDbConfig) {
+      const activeEnv = activeDbConfig.active_env || 'prod';
+      // 注意：Ingest Key 與問答用的 Chat Key（prod_api_key/dev_api_key）是 AiRAG 端不同 scope 的獨立金鑰，
+      // 不可互相 fallback（見 RAG_SYNC_PLAN.md 6.1 節第 8 點），否則會在 AiRAG 端驗證失敗回 401。
+      const apiKey = activeEnv === 'test'
+        ? (activeDbConfig.dev_ingest_api_key || process.env.AIRAG_INGEST_API_KEY)
+        : (activeDbConfig.ingest_api_key || process.env.AIRAG_INGEST_API_KEY);
+      const knowledgeBaseId = activeEnv === 'test'
+        ? (activeDbConfig.dev_knowledge_base_id || activeDbConfig.prod_knowledge_base_id || process.env.AIRAG_KNOWLEDGE_BASE_ID)
+        : (activeDbConfig.prod_knowledge_base_id || activeDbConfig.knowledge_base_id || process.env.AIRAG_KNOWLEDGE_BASE_ID);
+      return { apiKey, knowledgeBaseId };
+    }
+  } catch (err) {
+    console.warn('[aiRagIngestClient] 查詢 AiConfig 失敗，使用備用環境變數:', err.message);
+  }
+  return {
+    apiKey: process.env.AIRAG_INGEST_API_KEY,
+    knowledgeBaseId: process.env.AIRAG_KNOWLEDGE_BASE_ID,
+  };
+}
+
 /**
  * @param {object} params
  * @param {'article'|'attachment_file'} params.docType
@@ -21,8 +47,7 @@ const TIMEOUT_MS = 8000;
  */
 async function triggerIngest({ docType, sourceId, title, targetVersion, action, permissions }) {
   const baseUrl = process.env.AIRAG_BASE_URL;
-  const apiKey  = process.env.AIRAG_INGEST_API_KEY;
-  const knowledgeBaseId = process.env.AIRAG_KNOWLEDGE_BASE_ID;
+  const { apiKey, knowledgeBaseId } = await getActiveConfig();
 
   if (!baseUrl || !apiKey) {
     throw new Error('AIRAG_BASE_URL / AIRAG_INGEST_API_KEY 未設定，無法呼叫 AiRAG 觸發端點');
