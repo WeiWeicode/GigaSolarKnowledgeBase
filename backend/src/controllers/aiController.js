@@ -96,9 +96,12 @@ async function getAiConfig(req, res) {
     const devApiKey = activeDbConfig?.dev_api_key || '';
     const devKnowledgeBaseId = activeDbConfig?.dev_knowledge_base_id || '';
 
-    // Ingest Key 與 Chat Key 是 AiRAG 端不同 scope 的獨立金鑰，不可互相 fallback
+    // Ingest Key 與 Chat Key 是 AiRAG 端不同 scope 的獨立金鑰，不可互相 fallback；
+    // ingest 專用知識庫與問答用知識庫同樣是不同的知識庫，不可混用
     const ingestApiKey = activeDbConfig?.ingest_api_key || process.env.AIRAG_INGEST_API_KEY || '';
     const devIngestApiKey = activeDbConfig?.dev_ingest_api_key || '';
+    const ingestKnowledgeBaseId = activeDbConfig?.ingest_knowledge_base_id || process.env.AIRAG_KNOWLEDGE_BASE_ID || '';
+    const devIngestKnowledgeBaseId = activeDbConfig?.dev_ingest_knowledge_base_id || '';
 
     // 根據當前啟用的環境 (prod 或 test) 自動選擇當前要使用的 apiKey 與 knowledgeBaseId（聊天用）
     const currentApiKey = activeEnv === 'test' ? (devApiKey || prodApiKey) : prodApiKey;
@@ -118,6 +121,8 @@ async function getAiConfig(req, res) {
         devKnowledgeBaseId,
         ingestApiKey,
         devIngestApiKey,
+        ingestKnowledgeBaseId,
+        devIngestKnowledgeBaseId,
       });
     }
 
@@ -139,6 +144,8 @@ async function saveAiConfig(req, res) {
       devKnowledgeBaseId,
       ingestApiKey,
       devIngestApiKey,
+      ingestKnowledgeBaseId,
+      devIngestKnowledgeBaseId,
     } = req.body;
 
     let [configRecord] = await AiConfig.findOrCreate({
@@ -156,6 +163,8 @@ async function saveAiConfig(req, res) {
         dev_knowledge_base_id: devKnowledgeBaseId || '',
         ingest_api_key: ingestApiKey || '',
         dev_ingest_api_key: devIngestApiKey || '',
+        ingest_knowledge_base_id: ingestKnowledgeBaseId || '',
+        dev_ingest_knowledge_base_id: devIngestKnowledgeBaseId || '',
       },
     });
 
@@ -166,6 +175,8 @@ async function saveAiConfig(req, res) {
     if (devKnowledgeBaseId !== undefined) configRecord.dev_knowledge_base_id = devKnowledgeBaseId;
     if (ingestApiKey !== undefined) configRecord.ingest_api_key = ingestApiKey;
     if (devIngestApiKey !== undefined) configRecord.dev_ingest_api_key = devIngestApiKey;
+    if (ingestKnowledgeBaseId !== undefined) configRecord.ingest_knowledge_base_id = ingestKnowledgeBaseId;
+    if (devIngestKnowledgeBaseId !== undefined) configRecord.dev_ingest_knowledge_base_id = devIngestKnowledgeBaseId;
 
     // 同步相容舊版欄位
     const effectiveApiKey = configRecord.active_env === 'test' ? (configRecord.dev_api_key || configRecord.prod_api_key) : configRecord.prod_api_key;
@@ -188,6 +199,8 @@ async function saveAiConfig(req, res) {
         devKnowledgeBaseId: configRecord.dev_knowledge_base_id,
         ingestApiKey: configRecord.ingest_api_key,
         devIngestApiKey: configRecord.dev_ingest_api_key,
+        ingestKnowledgeBaseId: configRecord.ingest_knowledge_base_id,
+        devIngestKnowledgeBaseId: configRecord.dev_ingest_knowledge_base_id,
       },
     });
   } catch (err) {

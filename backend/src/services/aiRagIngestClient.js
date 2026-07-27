@@ -21,9 +21,11 @@ async function getActiveConfig() {
       const apiKey = activeEnv === 'test'
         ? (activeDbConfig.dev_ingest_api_key || process.env.AIRAG_INGEST_API_KEY)
         : (activeDbConfig.ingest_api_key || process.env.AIRAG_INGEST_API_KEY);
+      // 同理，ingest 專用知識庫與問答用知識庫（prod/dev_knowledge_base_id）是不同的知識庫，不可混用
+      // （見 RAG_SYNC_PLAN.md 4.3、6 節），混用會讓切分結果寫進問答知識庫或觸發 AiRAG 回 400。
       const knowledgeBaseId = activeEnv === 'test'
-        ? (activeDbConfig.dev_knowledge_base_id || activeDbConfig.prod_knowledge_base_id || process.env.AIRAG_KNOWLEDGE_BASE_ID)
-        : (activeDbConfig.prod_knowledge_base_id || activeDbConfig.knowledge_base_id || process.env.AIRAG_KNOWLEDGE_BASE_ID);
+        ? (activeDbConfig.dev_ingest_knowledge_base_id || process.env.AIRAG_KNOWLEDGE_BASE_ID)
+        : (activeDbConfig.ingest_knowledge_base_id || process.env.AIRAG_KNOWLEDGE_BASE_ID);
       return { apiKey, knowledgeBaseId };
     }
   } catch (err) {
@@ -52,6 +54,9 @@ async function triggerIngest({ docType, sourceId, title, targetVersion, action, 
   if (!baseUrl || !apiKey) {
     throw new Error('AIRAG_BASE_URL / AIRAG_INGEST_API_KEY 未設定，無法呼叫 AiRAG 觸發端點');
   }
+  if (!knowledgeBaseId) {
+    throw new Error('Ingest 專用知識庫 ID 未設定（請於「API Key 設定」填入，或設定 AIRAG_KNOWLEDGE_BASE_ID）');
+  }
 
   // AIRAG_BASE_URL 若帶結尾斜線（例如 http://host:port/）會讓組出的路徑變成雙斜線 // 而 404，故先去除
   const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
@@ -67,16 +72,27 @@ async function triggerIngest({ docType, sourceId, title, targetVersion, action, 
     permissions,
   };
 
-  const response = await axios.post(
-    `${normalizedBaseUrl}/api/external/ingest/trigger`,
-    payload,
-    {
-      headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
-      timeout: TIMEOUT_MS,
-    }
-  );
+  try {
+    const response = await axios.post(
+      `${normalizedBaseUrl}/api/external/ingest/trigger`,
+      payload,
+      {
+        headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
+        timeout: TIMEOUT_MS,
+      }
+    );
 
-  return response.data;
+    return response.data;
+  } catch (err) {
+    // AiRAG 以 FastAPI HTTPException 回應時，失敗原因放在 response body 的 detail；
+    // axios 的 err.message 只有「Request failed with status code 4xx」，會讓同步日誌看不出原因，故補上 detail
+    const detail = err.response?.data?.detail;
+    if (detail) {
+      const detailText = typeof detail === 'string' ? detail : JSON.stringify(detail);
+      throw new Error(`AiRAG 觸發失敗 (HTTP ${err.response.status}): ${detailText}`);
+    }
+    throw err;
+  }
 }
 
 module.exports = {

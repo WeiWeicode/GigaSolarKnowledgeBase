@@ -5,6 +5,15 @@
 - **狀態**：KB ↔ AiRAG ↔ Qdrant 端到端已實測成功（2026-07-23，見 v1.6）。KB 端（前端 + 後端）施作完成（TASK-S1～S9、TASK-F1～F3、TASK-D1），AiRAG 端 `POST /api/external/ingest/trigger`、App Registry、內容拉取、Qdrant 寫入、`direct_db` 進度回報全部驗證可正常運作。剩餘技術債見 9 節第 6 項（AiRAG 直連 KB DB 暫用 `sa` 帳號）。
 - **建立日期**：2026-07-23
 - **修訂記錄**：
+  - v1.9（2026-07-27）400 結案：**原因是 `app_registrations` 的 `kb` 記錄 `is_active=false`**，非 v1.8 第 4 點推測的「未登錄」。判定依據：`POST /api/app-registrations` 回 `app_id 'kb' 已存在`（證明記錄存在），而觸發仍回 `appId 'kb' 未登錄或已停用`，故 `external.py` 該判斷式只剩 `not app_reg.is_active` 會成立。以 `PUT /api/app-registrations/kb` 帶 `is_active=true` 後恢復正常。AiRAG 端無任何自動停用邏輯（`is_active` 在 model 與 schema 皆預設 `True`），只可能是人工以 PUT 停用或直接改 MongoDB，無法從程式碼追出經手者。連帶修正（皆在 AiRAG repo）：
+    1. `external.py`／`ingest_service.py` 將「未登錄」與「已停用」拆為兩句訊息並各自附上處理方式（POST 新建 vs PUT 設 `is_active`）。原本共用一句是本次多繞一輪的主因。
+    2. 新增 App Registry 管理 UI（`views/AppRegistrationSettingsView.vue`、`services/appRegistrationService.js`、路由 `/app-registrations`、側邊欄項目）。此表原本只有 API 沒有任何畫面，`is_active` 這類欄位只能靠打 API 或直接改 MongoDB 才能檢視／修改，是問題難以察覺的結構性原因。UI 支援列出／新增／編輯／一鍵切換啟用停用／刪除。
+    3. `check_db.py` 讀 `a.app_name`（model 欄位實為 `display_name`）會 AttributeError，且金鑰列的 `scope` 未包 f-string 大括號而印出字面文字；兩者皆已修正。此腳本正是用來排查這類 Registry 問題的工具。
+  - v1.8（2026-07-27）v1.7 修正 401 後，正式環境改回報 400。排查與修正：
+    1. **AiRAG 端金鑰建立 UI 漏傳 scope**（`AiRAG` repo，本 repo 外）：`ExternalApiKey.scope` 預設 `"chat"`，而 `verify_ingest_api_key()` 要求 `scope="ingest"`；`RoleSettingsView.vue` 的建立表單只有名稱欄位、`externalApiKeyService.create()` 只送 `{ name }`，導致該畫面建出的金鑰**一律是 `chat` scope**，名稱僅為標籤、與實際用途無關。已補上 scope 下拉選單與列表「用途 (Scope)」欄位（後端 `ExternalApiKeyCreateRequest` 原本就支援 `scope`，僅前端未傳）。金鑰建立後無法改 scope（只有 create/list/delete，無 update 端點），錯誤 scope 的金鑰只能刪除重建。
+    2. **`aiRagIngestClient.js` 吞掉 AiRAG 的失敗原因**：AiRAG 以 FastAPI `HTTPException` 回應，原因在 response body 的 `detail`，但 axios 的 `err.message` 只有「Request failed with status code 4xx」，同步日誌因此看不出是 4 種 400 條件（`appId` 未登錄／`report_mode='webhook'` 缺 `callbackUrl`／`knowledgeBaseId` 格式無效／知識庫不存在）中的哪一種。已改為捕捉並將 `detail` 併入錯誤訊息。
+    3. **ingest 專用知識庫 ID 誤用問答用知識庫**（與 v1.7 金鑰混用同一類型錯誤）：`getActiveConfig()` 原優先讀 `prod_knowledge_base_id`（問答用），使 4.3／6 節「ingest 專用知識庫與問答用知識庫是不同的知識庫，不可混用」失效，`.env` 的 `AIRAG_KNOWLEDGE_BASE_ID` 永遠不會被採用。已新增獨立欄位 `ingest_knowledge_base_id`/`dev_ingest_knowledge_base_id`（管理頁同步新增輸入欄位），並在 `triggerIngest()` 加上知識庫 ID 未設定的明確錯誤訊息。
+    4. ⚠️ **待生產環境確認**：`app_registrations` 需有 `app_id="kb"`、`is_active=true` 且 `report_mode="direct_db"` 的登錄。`AppRegistration.report_mode` 預設值為 `"webhook"`，而 KB 端不送 `callbackUrl`，若生產環境的 MongoDB 未登錄或以預設值登錄，會固定回 400。v1.6 的補登是在**測試環境的 MongoDB**，不會隨部署帶到生產環境，需另行以 `GET/POST/PUT /api/app-registrations` 檢查與修正。
   - v1.7（2026-07-24）正式環境部署後 `notifyChanged` 觸發切分持續回報 401，排查發現是本次施作誤把 Ingest Key 與問答用 Chat Key（`AiConfig.prod_api_key`/`dev_api_key`，透過「API Key 設定」管理頁維護）共用同一組欄位，違反 6.1 節第 8 點「金鑰分離」的原始設計，AiRAG 端以 `scope="ingest"` 驗證 hash 比對不到 Chat Key 而回 401。修正：
     1. `AiConfig` 新增獨立欄位 `ingest_api_key`/`dev_ingest_api_key`，「API Key 設定」管理頁新增對應輸入欄位，與 Chat Key 分開管理與儲存。
     2. `aiRagIngestClient.js` 的 `getActiveConfig()` 改為只從 `ingest_api_key`/`dev_ingest_api_key`（或 `.env` 的 `AIRAG_INGEST_API_KEY` 備援）取得 Ingest Key，不再 fallback 到 Chat Key 欄位。

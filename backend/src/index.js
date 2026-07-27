@@ -136,6 +136,8 @@ async function startServer() {
     await addAiConfigColIfMissing('dev_knowledge_base_id', "dev_knowledge_base_id NVARCHAR(255) NULL");
     await addAiConfigColIfMissing('ingest_api_key', "ingest_api_key NVARCHAR(255) NULL");
     await addAiConfigColIfMissing('dev_ingest_api_key', "dev_ingest_api_key NVARCHAR(255) NULL");
+    await addAiConfigColIfMissing('ingest_knowledge_base_id', "ingest_knowledge_base_id NVARCHAR(255) NULL");
+    await addAiConfigColIfMissing('dev_ingest_knowledge_base_id', "dev_ingest_knowledge_base_id NVARCHAR(255) NULL");
     console.log('✅ ai_configs 資料表已就緒（含新增欄位）');
 
     // 3. 目錄樹與 AI 提示詞種子資料（當表為空時自動初始化）
