@@ -351,7 +351,7 @@ const strictnessLevel = ref(8)
 
 const strictnessLabels = [
   '極寬鬆', '最寬鬆', '寬鬆', '稍寬鬆', '中等平衡',
-  '稍嚴謹', '嚴謹', '較嚴謹', '精準', '極嚴謹'
+  '稍嚴謹', '嚴謹', '較嚴謹', '最嚴謹', '極嚴謹'
 ]
 
 const strictnessLabel = computed(() => {
