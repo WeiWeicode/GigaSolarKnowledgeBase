@@ -347,7 +347,7 @@ const selectedFile = ref(null)
 const fileError    = ref('')
 
 // ── 檢索嚴謹度 (10個等級：1=寬鬆 ~ 10=嚴謹) ──────────────────
-const strictnessLevel = ref(5)
+const strictnessLevel = ref(8)
 
 const strictnessLabels = [
   '極寬鬆', '最寬鬆', '寬鬆', '稍寬鬆', '中等平衡',

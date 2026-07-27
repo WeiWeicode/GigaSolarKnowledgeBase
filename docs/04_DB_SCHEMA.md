@@ -567,11 +567,16 @@ rag_sync_status（無實體 FK，邏輯關聯）
 | `last_synced_at` | `DATETIME2` | NULL | 由 AiRAG 直連寫入 |
 | `last_checked_at` | `DATETIME2` | NULL | KB 後端排程最後一次比對時間 |
 | `triggered_by` | `NVARCHAR(20)` | NULL | `'schedule'` \| `'manual'` \| `'auto_update'` |
+| `caption_failed_count` | `INT` | NULL, DEFAULT `0` | 內嵌圖片 AI 描述失敗的段落數。AiRAG 完成回報時直連寫入，全量校驗查 Qdrant 後亦會回填。> 0 代表「切分完成但部分圖片沒有可用描述」，此情況 `status` 仍為 `completed`，需靠本欄位才看得出來 |
 | `error_message` | `NVARCHAR(MAX)` | NULL | 最新一筆失敗原因（由 AiRAG 直連寫入） |
 | `created_at` | `DATETIME2` | NOT NULL, DEFAULT GETDATE() | |
 | `updated_at` | `DATETIME2` | NOT NULL, DEFAULT GETDATE() | |
 
 **唯一索引**：`(source_type, source_id)`
+
+> ⚠️ `backend/src/index.js` 以 `RagSyncStatus.sync({ force: false })` 建表，該模式**不會替既有資料表補上新欄位**。
+> `caption_failed_count` 為 2026-07-27 新增，既有部署需執行一次
+> `node src/scripts/addRagSyncCaptionFailedColumn.js`（冪等，可重複執行）。
 
 ### 19.2 rag_sync_config（排程設定表，固定單筆列）
 

@@ -324,10 +324,19 @@
               <template #default="{ row }">{{ ragSourceTypeLabel(row.sourceType) }}</template>
             </el-table-column>
             <el-table-column prop="title" label="標題 / 檔名" show-overflow-tooltip />
-            <el-table-column label="狀態" width="130">
+            <el-table-column label="狀態" width="180">
               <template #default="{ row }">
                 <el-tooltip :content="ragStatusTooltip(row.status)" placement="top">
                   <el-tag size="small" :type="ragStatusTagType(row.status)" class="cursor-pointer">{{ ragStatusLabel(row.status) }}</el-tag>
+                </el-tooltip>
+                <el-tooltip
+                  v-if="row.captionFailedCount > 0"
+                  content="此文件有內嵌圖片的 AI 描述產生失敗，勾選後點「指定執行切分」可重新產生"
+                  placement="top"
+                >
+                  <el-tag size="small" type="warning" class="cursor-pointer rag-caption-warning">
+                    ⚠ 圖片描述失敗 {{ row.captionFailedCount }}
+                  </el-tag>
                 </el-tooltip>
               </template>
             </el-table-column>
@@ -702,7 +711,7 @@ async function runRagAudit() {
   ragAuditRunning.value = true
   try {
     await ragSyncService.runAudit()
-    ElMessage.success('全量校驗已開始執行，完成後可重新查詢比對列表查看結果')
+    ElMessage.success('全量校驗已開始執行，完成後可重新查詢比對列表查看結果（含圖片描述失敗警示）')
   } catch (e) {
     ElMessage.error('觸發全量校驗失敗：' + (e.message || ''))
   } finally {
@@ -791,4 +800,5 @@ onMounted(async () => {
 
 .rag-filter-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
 .rag-pagination { margin-top: 16px; justify-content: flex-end; }
+.rag-caption-warning { margin-left: 6px; }
 </style>

@@ -890,6 +890,7 @@ function normalizeRagSyncStatusRow(r) {
     lastSyncedAt:       r.last_synced_at,
     lastCheckedAt:      r.last_checked_at,
     triggeredBy:        r.triggered_by,
+    captionFailedCount: r.caption_failed_count ?? 0,
     errorMessage:       r.error_message,
     updatedAt:          r.updated_at,
   }

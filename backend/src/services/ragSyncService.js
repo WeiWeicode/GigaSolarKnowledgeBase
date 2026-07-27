@@ -258,7 +258,7 @@ async function runScheduledCheck() {
 
 // ── 2.5 節：全量校驗流程（管理員手動觸發，逐筆查 Qdrant）─────
 async function runFullAudit() {
-  const summary = { checked: 0, drifted: 0 };
+  const summary = { checked: 0, drifted: 0, captionFailed: 0 };
 
   try {
     const publishedArticles = await Article.findAll({
@@ -299,12 +299,32 @@ async function runFullAudit() {
           status: meta ? 'outdated' : 'not_synced',
           triggeredBy: existing?.triggered_by || 'schedule',
         });
-      } else {
-        await RagSyncStatus.update(
-          { last_checked_at: new Date() },
-          { where: { source_type: t.sourceType, source_id: t.sourceId } }
-        );
+        continue;
       }
+
+      // 版本一致仍需檢查內嵌圖片描述是否有失敗段落。這類文件在 AiRAG 端是回報 completed 的，
+      // 版本比對永遠看不出來，只能實際查 Qdrant 的圖片段落內容。
+      let captionFailedCount = 0;
+      try {
+        captionFailedCount = await qdrantService.countFailedCaptions(t.sourceType, t.sourceId);
+      } catch (err) {
+        await logEvent({ sourceType: t.sourceType, sourceId: t.sourceId, stage: 'compare', level: 'warning', message: `圖片描述失敗段落查詢失敗: ${err.message}` });
+      }
+
+      if (captionFailedCount > 0) {
+        summary.captionFailed += 1;
+        await logEvent({
+          sourceType: t.sourceType, sourceId: t.sourceId, stage: 'compare', level: 'warning',
+          message: `「${t.title}」有 ${captionFailedCount} 個內嵌圖片段落的 AI 描述產生失敗，可指定執行切分重新產生`,
+        });
+      }
+
+      // 不把描述失敗視為 drift：drift 會轉為 outdated 而被排程反覆重新觸發，
+      // 若該圖片本來就無法描述成功會造成無限重試，故僅記錄數量與警告，由管理員決定是否重跑
+      await RagSyncStatus.update(
+        { last_checked_at: new Date(), caption_failed_count: captionFailedCount },
+        { where: { source_type: t.sourceType, source_id: t.sourceId } }
+      );
     }
   } catch (err) {
     console.error('runFullAudit error:', err.message);

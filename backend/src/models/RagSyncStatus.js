@@ -66,6 +66,12 @@ const RagSyncStatus = sequelize.define('RagSyncStatus', {
     allowNull: true,
     comment: "'schedule' | 'manual' | 'auto_update'",
   },
+  caption_failed_count: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    defaultValue: 0,
+    comment: '內嵌圖片 AI 描述失敗的段落數；由 AiRAG 完成回報時直連寫入，或全量校驗查 Qdrant 後回填',
+  },
   error_message: {
     type: DataTypes.TEXT,
     allowNull: true,
