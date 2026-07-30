@@ -2,6 +2,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authService } from '@/services/api.js'
+import { useAiChatStore } from '@/store/aiChat.js'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
@@ -32,6 +33,9 @@ export const useAuthStore = defineStore('auth', () => {
     await authService.logout()
     user.value = null
     token.value = null
+    // 登出是 SPA 內路由跳轉，非整頁重新整理，Pinia store 會留在記憶體中；
+    // 清空 AI 問答對話與已引用內容，避免下一位登入者看到前一位使用者的內容。
+    useAiChatStore().reset()
   }
 
   return { user, token, isLoggedIn, role, isAdmin, isManager, login, logout, fetchCurrentUser }

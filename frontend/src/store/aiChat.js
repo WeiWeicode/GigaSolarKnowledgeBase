@@ -20,9 +20,30 @@ export const useAiChatStore = defineStore('aiChat', () => {
   const referencedArticles  = ref([])
   const referencedFiles     = ref([])
 
+  // 登出時呼叫（見 store/auth.js 的 logout()）：清空對話與已引用內容。
+  // 因為登出／切換帳號是 SPA 內的路由跳轉（非整頁重新整理），Pinia store
+  // 會繼續存活在記憶體中；若不主動清空，換下一位使用者登入同一分頁時，
+  // 仍會看到前一位使用者的 AI 對話內容與已引用的文章/附件內容。
+  function reset() {
+    currentMode.value         = 'chat'
+    inputText.value           = ''
+    messages.value            = []
+    streaming.value           = false
+    useContext.value          = true
+    selectedFile.value        = null
+    fileError.value           = ''
+    strictnessLevel.value     = 8
+    searchModeLevel.value     = 1
+    showMentionDropdown.value = false
+    mentionResults.value      = []
+    referencedArticles.value  = []
+    referencedFiles.value     = []
+  }
+
   return {
     currentMode, inputText, messages, streaming, useContext,
     selectedFile, fileError, strictnessLevel, searchModeLevel,
     showMentionDropdown, mentionResults, referencedArticles, referencedFiles,
+    reset,
   }
 })
