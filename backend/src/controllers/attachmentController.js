@@ -10,6 +10,7 @@ const { canAccess } = require('../helpers/accessHelper');
 const { v4: uuidv4 } = require('uuid');
 const ragSyncService = require('../services/ragSyncService');
 const { SYNCABLE_MIME_TYPES } = require('../helpers/fileTypeHelper');
+const { isSupportedMimeType, extractTextFromBuffer } = require('../helpers/fileTextExtractor');
 
 /**
  * 取得使用者的跨部門授權代碼清單
@@ -559,6 +560,58 @@ async function downloadFile(req, res) {
   }
 }
 
+// 抽取附件檔案文字內容（供 AI 問答頁面拖曳附件引用使用）
+// 僅支援 PDF／Word，其餘格式與掃描圖片型/加密 PDF 由前端依回傳的空字串提示使用者
+async function extractFileText(req, res) {
+  try {
+    const { uuid } = req.params;
+
+    const file = await AttachmentFile.findOne({
+      where: { uuid },
+      include: [{ model: Attachment }],
+    });
+
+    if (!file) {
+      return res.status(404).json({ success: false, message: '檔案不存在' });
+    }
+
+    // 檢查存取權限（需帶 extraDeptCodes，避免跨部門授權使用者被誤判無權限）
+    const extraDeptCodes = await getUserExtraDeptCodes(req.user.員工工號);
+    if (!canAccess(req.user, file.Attachment, extraDeptCodes)) {
+      return res.status(403).json({ success: false, message: '您無權存取此檔案' });
+    }
+
+    if (!isSupportedMimeType(file.mime_type)) {
+      return res.status(400).json({ success: false, message: '此檔案格式暫不支援 AI 引用（僅支援 PDF、Word）' });
+    }
+
+    if (Number(file.size) > 5 * 1024 * 1024) {
+      return res.status(400).json({ success: false, message: '檔案大小超過 5 MB，暫不支援 AI 引用' });
+    }
+
+    const fs   = require('fs');
+    const path = require('path');
+    const filePath = path.isAbsolute(file.storage_path)
+      ? file.storage_path
+      : path.join(process.cwd(), file.storage_path);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, message: '實體檔案不存在' });
+    }
+
+    const buffer = fs.readFileSync(filePath);
+    const text   = await extractTextFromBuffer(buffer, file.mime_type);
+
+    return res.json({
+      success: true,
+      data: { uuid: file.uuid, name: file.name, text: text.trim() },
+    });
+  } catch (error) {
+    console.error('extractFileText error:', error.message);
+    return res.status(500).json({ success: false, message: '檔案文字擷取失敗' });
+  }
+}
+
 module.exports = {
   getAllAttachments,
   searchAttachments,
@@ -567,4 +620,5 @@ module.exports = {
   createAttachment,
   updateAttachment,
   downloadFile,
+  extractFileText,
 };

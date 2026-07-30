@@ -126,7 +126,7 @@ export async function sendExternalChat(payload, options = {}) {
     chat_history: chatHistory,
     selected_db_profile_id: selectedDbProfileId,
     params: {
-      search_type: params.search_type || 'KB_semantic_hybrid',
+      search_type: params.search_type || 'KB_hybrid',
       // 知識庫檢索情境下模型思考過程（reasoning）可能耗費大量 token，
       // 預設值 1024 常在正式回答（content）尚未產生前就被截斷，故提高預設上限
       max_tokens: params.max_tokens || 60000,

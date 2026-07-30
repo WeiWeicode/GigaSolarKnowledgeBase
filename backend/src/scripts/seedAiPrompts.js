@@ -27,9 +27,10 @@ async function seedAiPrompts() {
     }
 
     // 2. Seed Prompt Templates
-    const templateCount = await AiPromptTemplate.count();
-    if (templateCount === 0) {
-      console.log('-> Seeding default Prompt Templates...');
+    // 逐筆以 mode_key 檢查後補建：既有資料庫也能拿到後續新增的模板
+    // （原本是「表內有任何資料就整批跳過」，新模板永遠進不了既有環境）。
+    // 已存在的模板不覆寫，避免蓋掉管理者在 DB 內調校過的提示詞。
+    {
       const defaultTemplates = [
         {
           mode_key: 'summarize',
@@ -76,14 +77,31 @@ async function seedAiPrompts() {
           is_active: true,
           description: '技術步驟與操作指引模板',
         },
+        {
+          mode_key: 'qa',
+          mode_name: '指定內容問答',
+          system_prompt: '你是一位專業的知識庫問答助手。請根據使用者提供的參考資料，直接回答使用者的問題。規則：(1) 只回答使用者問的問題，不要額外輸出「核心摘要」「關鍵重點」「深入分析」「結論與洞察」等未被要求的段落；(2) 答案必須基於參考資料，不要憑空推測；(3) 若參考資料中找不到答案，直接說明資料中未提及，不要編造；(4) 問題涉及設定或操作時，依資料中的實際內容條列具體步驟、路徑與參數值；(5) 以繁體中文回答，善用 Markdown（條列、表格、程式碼區塊）提升可讀性。',
+          user_template: `/no_think\n以下是參考資料：\n\n{content}\n\n---\n\n請根據上述參考資料回答我的問題：\n\n**{question}**\n\n請直接針對這個問題作答，不需要輸出文章摘要、關鍵重點或分析架構。若參考資料中沒有相關資訊，請直接說明。`,
+          placeholders: 'content,question',
+          is_active: true,
+          description: '使用者以 # 指定文章或拖曳附件後，有明確提問時使用：只針對問題作答，不套用固定摘要架構',
+        },
       ];
 
+      let created = 0;
       for (const t of defaultTemplates) {
-        await AiPromptTemplate.create(t);
+        const [, wasCreated] = await AiPromptTemplate.findOrCreate({
+          where:    { mode_key: t.mode_key },
+          defaults: t,
+        });
+        if (wasCreated) {
+          created++;
+          console.log(`-> Prompt Template '${t.mode_key}' seeded.`);
+        }
       }
-      console.log('✅ Default AI Prompt Templates seeded.');
-    } else {
-      console.log('-> AI Prompt Templates already exist, skip.');
+      console.log(created > 0
+        ? `✅ ${created} AI Prompt Template(s) seeded.`
+        : '-> All AI Prompt Templates already exist, skip.');
     }
 
     console.log('🌱 AI Seeding completed successfully!\n');

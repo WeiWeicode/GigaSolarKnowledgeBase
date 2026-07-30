@@ -215,34 +215,67 @@
             >{{ cmd.label }}</el-button>
           </div>
 
-          <!-- 檢索嚴謹度拉桿區（僅 chat 模式顯示） -->
+          <!-- 檢索與思考模式拉桿區（僅 chat 模式顯示） -->
           <div v-if="currentMode === 'chat'" class="search-strictness-bar">
-            <div class="strictness-header">
-              <span class="strictness-label">
-                資料撈取：
-                <strong class="strictness-value-text">{{ strictnessLabel }}</strong>
-              </span>
-              <el-tooltip
-                content="寬鬆：AI 取得資料較多，會思考較久；嚴謹：精準篩選資料"
-                placement="top"
-                effect="dark"
-              >
-                <span class="info-pop-icon">!</span>
-              </el-tooltip>
-            </div>
-            <div class="strictness-slider-wrapper">
-              <span class="slider-node-label">寬鬆</span>
-              <el-slider
-                v-model="strictnessLevel"
-                :min="1"
-                :max="10"
-                :step="1"
-                :show-tooltip="true"
-                :format-tooltip="formatStrictnessTooltip"
-                size="small"
-                class="strictness-slider"
-              />
-              <span class="slider-node-label">嚴謹</span>
+            <div class="strictness-row">
+              <div class="strictness-col think-mode-col">
+                <div class="strictness-header">
+                  <span class="strictness-label">
+                    思考模式：
+                    <strong class="strictness-value-text">{{ searchModeLabel }}</strong>
+                  </span>
+                  <el-tooltip
+                    content="快速：使用 KB_hybrid 檢索，回應速度較快；嚴謹：使用 KB_semantic_hybrid 檢索，品質較佳但速度較慢"
+                    placement="top"
+                    effect="dark"
+                  >
+                    <span class="info-pop-icon">!</span>
+                  </el-tooltip>
+                </div>
+                <div class="strictness-slider-wrapper">
+                  <span class="slider-node-label">快速</span>
+                  <el-slider
+                    v-model="searchModeLevel"
+                    :min="1"
+                    :max="2"
+                    :step="1"
+                    :show-tooltip="false"
+                    size="small"
+                    class="strictness-slider"
+                  />
+                  <span class="slider-node-label">嚴謹</span>
+                </div>
+              </div>
+
+              <div class="strictness-col data-fetch-col">
+                <div class="strictness-header">
+                  <span class="strictness-label">
+                    資料撈取：
+                    <strong class="strictness-value-text">{{ strictnessLabel }}</strong>
+                  </span>
+                  <el-tooltip
+                    content="寬鬆：AI 取得資料較多，會思考較久；嚴謹：精準篩選資料"
+                    placement="top"
+                    effect="dark"
+                  >
+                    <span class="info-pop-icon">!</span>
+                  </el-tooltip>
+                </div>
+                <div class="strictness-slider-wrapper">
+                  <span class="slider-node-label">寬鬆</span>
+                  <el-slider
+                    v-model="strictnessLevel"
+                    :min="1"
+                    :max="10"
+                    :step="1"
+                    :show-tooltip="true"
+                    :format-tooltip="formatStrictnessTooltip"
+                    size="small"
+                    class="strictness-slider"
+                  />
+                  <span class="slider-node-label">嚴謹</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -293,13 +326,11 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { marked } from 'marked'
-import { aiService, articleService, crossDeptService } from '@/services/api.js'
-import { sendExternalChat } from '@/services/AiRAGApi.js'
+import { reactive, toRefs } from 'vue'
+import { useAiChat } from '@/composables/useAiChat.js'
 import { useDirectoryStore } from '@/store/directory.js'
-import { useAuthStore } from '@/store/auth.js'
+
+const dirStore = useDirectoryStore()
 
 const props = defineProps({
   modelValue:     Boolean,
@@ -317,637 +348,39 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue', 'apply', 'tagAdded'])
 
-const dirStore  = useDirectoryStore()
-const authStore = useAuthStore()
-
-// 跨部門授權（同 DirectoryTree.vue，用於 # 篩選）
-const myGrantedDepts = ref([])
-onMounted(async () => {
-  try {
-    const grants = await crossDeptService.getMyGrants()
-    myGrantedDepts.value = grants.map(g => g.dept_code)
-  } catch { /* 無授權資料，忽略 */ }
+// 本地狀態：隨元件掛載/卸載重置，與重構前的彈出視窗行為完全一致
+const localState = reactive({
+  currentMode: 'chat',
+  inputText: '',
+  messages: [],
+  streaming: false,
+  useContext: true,
+  selectedFile: null,
+  fileError: '',
+  strictnessLevel: 8,
+  searchModeLevel: 1,
+  showMentionDropdown: false,
+  mentionResults: [],
+  referencedArticles: [],
+  referencedFiles: [],
 })
 
-const QUICK_COMMANDS = [
-  { key: 'quick_summary',    label: '簡易摘要' },
-  { key: 'detailed_summary', label: '詳細摘要' },
-  { key: 'step_guide',       label: '步驟詳解' },
-]
-
-const currentMode  = ref('chat')
-const inputText    = ref('')
-const messages     = ref([])
-const streaming    = ref(false)
-const useContext   = ref(true)
-const messageArea  = ref(null)
-const fileInputRef = ref(null)
-const inputRef     = ref(null)
-const selectedFile = ref(null)
-const fileError    = ref('')
-
-// ── 檢索嚴謹度 (10個等級：1=寬鬆 ~ 10=嚴謹) ──────────────────
-const strictnessLevel = ref(8)
-
-const strictnessLabels = [
-  '極寬鬆', '最寬鬆', '寬鬆', '稍寬鬆', '中等平衡',
-  '稍嚴謹', '嚴謹', '較嚴謹', '最嚴謹', '極嚴謹'
-]
-
-const strictnessLabel = computed(() => {
-  return strictnessLabels[strictnessLevel.value - 1] || '中等平衡'
-})
-
-function formatStrictnessTooltip(val) {
-  return `等級 ${val}：${strictnessLabels[val - 1] || ''}`
-}
-
-// 根據拉桿等級 (1~10) 動態計算 API 參數
-// top_k: 50 => 5
-// score_threshold: 0.1 => 0.7
-// ai_summary_score_threshold: 0.1 => 0.6
-const computedRAGParams = computed(() => {
-  const L = strictnessLevel.value
-  const top_k = Math.round(50 - (L - 1) * (45 / 9))
-  const score_threshold = Number((0.1 + (L - 1) * (0.6 / 9)).toFixed(2))
-  const ai_summary_score_threshold = Number((0.1 + (L - 1) * (0.5 / 9)).toFixed(2))
-
-  return {
-    top_k,
-    score_threshold,
-    ai_summary_score_threshold,
-  }
-})
-
-// # mention
-const showMentionDropdown = ref(false)
-const mentionResults      = ref([])
-const referencedArticles  = ref([])
-let mentionTimer          = null
-
-let abortController = null
-
-const ALL_MODES = [
-  { key: 'chat',     label: 'AI 問答' },
-  { key: 'generate', label: '產生文章' },
-  { key: 'correct',  label: '校正文章' },
-]
-
-const visibleModes = computed(() =>
-  ALL_MODES.filter(m => props.allowedModes.includes(m.key)),
-)
-
-// allowedModes 改變時（或初始化）自動切換到第一個允許的 mode
-watch(
-  visibleModes,
-  (modes) => {
-    if (!modes.find(m => m.key === currentMode.value)) {
-      currentMode.value = modes[0]?.key ?? 'chat'
-    }
-  },
-  { immediate: true },
-)
-
-const welcomeText = computed(() => ({
-  chat:     '請輸入問題或貼入文章內容，我將解析並提供關鍵摘要與相關關鍵字。',
-  generate: '請輸入提示詞或上傳 Word / PDF 檔案（.doc/.docx/.pdf，最大 5 MB），我將為你產生 Markdown 文章。',
-  correct:  '點擊送出，我將校正目前編輯中的文章內容。',
-}[currentMode.value]))
-
-const inputPlaceholder = computed(() => ({
-  chat:     '輸入問題，或輸入 # 指定文章...',
-  generate: '輸入提示詞，例：「撰寫一篇關於 Redis 快取策略的技術文章」',
-  correct:  '',
-}[currentMode.value]))
-
-const canSend = computed(() => {
-  if (streaming.value) return false
-  if (currentMode.value === 'correct')  return !!props.contextContent?.trim()
-  if (currentMode.value === 'generate') return !!(inputText.value.trim() || selectedFile.value)
-  return !!(inputText.value.trim() || referencedArticles.value.length)
-})
+const {
+  messageArea, fileInputRef, inputRef,
+  QUICK_COMMANDS,
+  visibleModes, welcomeText, inputPlaceholder, canSend,
+  strictnessLabel, searchModeLabel, formatStrictnessTooltip,
+  close: closeChat, clearMessages, onFileSelected, clearFile,
+  onInputChange, onInputBlur, selectMention, removeRef,
+  requestAddKeyword, confirmApply,
+  sendCommand, sendMessage,
+  currentMode, inputText, messages, streaming, useContext,
+  selectedFile, fileError, strictnessLevel, searchModeLevel,
+  showMentionDropdown, mentionResults, referencedArticles,
+} = useAiChat(toRefs(localState), props, emit)
 
 function close() {
-  if (abortController) { abortController.abort(); abortController = null }
-  emit('update:modelValue', false)
-}
-
-function clearMessages() {
-  messages.value          = []
-  referencedArticles.value = []
-  inputText.value          = ''
-  clearFile()
-}
-
-// ── 檔案處理 ─────────────────────────────────────────────────
-function onFileSelected(e) {
-  const file = e.target.files?.[0]
-  fileError.value = ''
-  if (!file) return
-  const allowedMime = [
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/pdf',
-  ]
-  if (!allowedMime.includes(file.type) && !/\.(doc|docx|pdf)$/i.test(file.name)) {
-    fileError.value = '僅接受 .doc、.docx 或 .pdf 格式'
-    if (fileInputRef.value) fileInputRef.value.value = ''
-    return
-  }
-  if (file.size > 5 * 1024 * 1024) {
-    fileError.value = '檔案大小不可超過 5 MB'
-    if (fileInputRef.value) fileInputRef.value.value = ''
-    return
-  }
-  selectedFile.value = file
-}
-
-function clearFile() {
-  selectedFile.value = null
-  fileError.value    = ''
-  if (fileInputRef.value) fileInputRef.value.value = ''
-}
-
-// ── # 文章指定 ────────────────────────────────────────────────
-function onInputChange(val) {
-  if (currentMode.value !== 'chat') return
-  const match = val.match(/#([^#\s]*)$/)
-  if (match) {
-    clearTimeout(mentionTimer)
-    mentionTimer = setTimeout(() => fetchMentionArticles(match[1]), 300)
-  } else {
-    showMentionDropdown.value = false
-  }
-}
-
-function onInputBlur() {
-  // 延遲關閉，讓 mousedown 事件先觸發
-  setTimeout(() => { showMentionDropdown.value = false }, 200)
-}
-
-/**
- * 判斷目錄樹節點是否有存取權限（邏輯與 DirectoryTree.vue checkItemAccess 一致）
- */
-function hasTreeAccess(nodeData) {
-  const user = authStore.user
-  if (!user || authStore.isAdmin) return true
-
-  const resource = nodeData.Article
-  if (!resource) return true
-
-  const isPublic = resource.is_public === true || resource.is_public === 1
-
-  // 公開瀏覽模式：非公開文件不可見
-  if (dirStore.viewScope === 'public' && !isPublic) return false
-  if (isPublic) return true
-
-  // 解析 access_members
-  let accessMembers = resource.access_members
-  if (typeof accessMembers === 'string') {
-    try { accessMembers = JSON.parse(accessMembers) } catch { accessMembers = [] }
-  }
-  const members = Array.isArray(accessMembers) ? accessMembers : []
-
-  // 職級門檻
-  const accessLevel = resource.access_level ?? 10
-  const passLevel   = accessLevel >= 10 || (user.級職 ?? 99) <= accessLevel
-
-  let primaryAccess = false
-  if (members.length > 0) {
-    primaryAccess = members.map(String).includes(String(user.員工工號))
-  } else {
-    const rDept = resource.access_dept || ''
-    const uDept = user.部門代碼 || ''
-    if (!rDept) {
-      primaryAccess = true
-    } else {
-      const exactMatch  = uDept === rDept
-      const prefixMatch = uDept.length >= 3 && rDept.length >= 3
-                       && uDept.substring(0, 3) === rDept.substring(0, 3)
-      const crossMatch  = myGrantedDepts.value.includes(rDept)
-      primaryAccess = exactMatch || prefixMatch || crossMatch
-    }
-  }
-  return primaryAccess && passLevel
-}
-
-/**
- * 從 filteredTree 遍歷取出可見的文章清單
- * - 排除 trash 節點及其子孫（下架文章）
- * - 排除無存取權限的文章（禁止眼睛）
- */
-function collectVisibleArticles(nodes, inTrash = false) {
-  const result = []
-  for (const node of nodes) {
-    if (node.type === 'trash') continue        // 完全跳過垃圾桶節點
-    if (inTrash) continue                       // 不處理 trash 後代
-    if (node.type === 'article') {
-      if (hasTreeAccess(node)) {
-        result.push({ id: node.article_id, title: node.label })
-      }
-    }
-    if (node.children?.length) {
-      result.push(...collectVisibleArticles(node.children, false))
-    }
-  }
-  return result
-}
-
-async function fetchMentionArticles(q) {
-  try {
-    // 直接從已載入的目錄樹篩選，無需打 API
-    const allVisible = collectVisibleArticles(dirStore.filteredTree)
-
-    // 依關鍵字過濾（空字串 = 顯示全部）
-    const keyword = (q || '').trim().toLowerCase()
-    const filtered = keyword
-      ? allVisible.filter(a => a.title.toLowerCase().includes(keyword))
-      : allVisible
-
-    mentionResults.value      = filtered.slice(0, 8)
-    showMentionDropdown.value = mentionResults.value.length > 0 || keyword === ''
-  } catch {
-    showMentionDropdown.value = false
-  }
-}
-
-function selectMention(article) {
-  // 移除輸入框末尾的 #xxx
-  inputText.value = inputText.value.replace(/#[^#\s]*$/, '').trimEnd()
-  if (!referencedArticles.value.find(a => a.id === article.id)) {
-    referencedArticles.value.push({ id: article.id, title: article.title })
-  }
-  showMentionDropdown.value = false
-}
-
-function removeRef(id) {
-  referencedArticles.value = referencedArticles.value.filter(a => a.id !== id)
-}
-
-// ── 關鍵字提取（擷取 **粗體** 文字） ─────────────────────────
-function extractKeywords(markdown) {
-  const keywords = new Set()
-  for (const m of markdown.matchAll(/\*\*([^*\n]{2,20})\*\*/g)) {
-    keywords.add(m[1].trim())
-  }
-  return [...keywords].slice(0, 8)
-}
-
-async function requestAddKeyword(msg, kw) {
-  if (msg.addedKeywords?.includes(kw)) return
-
-  // 收集目標文章 ID：prop 傳入的當前文章 + # 指定的文章
-  const targetIds = new Set()
-  if (props.articleId) targetIds.add(Number(props.articleId))
-  referencedArticles.value.forEach(a => targetIds.add(a.id))
-
-  if (targetIds.size === 0) {
-    ElMessage.warning('請先使用 # 指定文章，或在文章頁使用此功能')
-    return
-  }
-
-  try {
-    const results = await Promise.all(
-      [...targetIds].map(id => articleService.addTags(id, [kw]))
-    )
-    msg.addedKeywords.push(kw)
-    ElMessage.success(`已將「${kw}」加入文章標籤`)
-    // 通知 parent 刷新顯示（ArticleView 更新 article.tags）
-    emit('tagAdded', kw, [...targetIds], results.map(r => r.data).flat())
-  } catch {
-    ElMessage.error(`新增標籤失敗，請稍後再試`)
-  }
-}
-
-// ── 一鍵貼入確認 ─────────────────────────────────────────────
-async function confirmApply(content) {
-  try {
-    await ElMessageBox.confirm(
-      '確認將 AI 產生的內容貼入編輯器？這將覆蓋現有的文章內容。',
-      '一鍵貼入確認',
-      { confirmButtonText: '確認貼入', cancelButtonText: '取消', type: 'warning' },
-    )
-    emit('apply', content)
-    ElMessage.success('AI 內容已貼入編輯器')
-  } catch { /* 使用者取消 */ }
-}
-
-// ── Markdown 渲染 ─────────────────────────────────────────────
-function updateHtml(msg) {
-  if (msg.role === 'ai' && msg.content) {
-    // 檢查是否有 <think>...</think> 或 <thought>...</thought>
-    const thinkRegex = /<(think|thought)>([\s\S]*?)<\/\1>/gi;
-    let match;
-    let hasThink = false;
-    let extractedThink = '';
-    
-    // 循環找出所有的思考標籤並提取內容
-    while ((match = thinkRegex.exec(msg.content)) !== null) {
-      hasThink = true;
-      extractedThink += (extractedThink ? '\n' : '') + match[2].trim();
-    }
-    
-    if (hasThink) {
-      // 將標籤及內容從正文移除
-      msg.content = msg.content.replace(thinkRegex, '').trim();
-      
-      // 如果 thinkContent 還沒有這段，就補上去
-      if (!msg.thinkContent) {
-        msg.thinkContent = extractedThink;
-      } else if (!msg.thinkContent.includes(extractedThink)) {
-        msg.thinkContent = (msg.thinkContent + '\n' + extractedThink).trim();
-      }
-    }
-    
-    // 容錯：處理可能還沒閉合的 <think> 或 <thought>（例如串流異常中斷或未完成的情況）
-    const unclosedRegex = /<(think|thought)>([\s\S]*)$/i;
-    const unclosedMatch = unclosedRegex.exec(msg.content);
-    if (unclosedMatch) {
-      const remainingThink = unclosedMatch[2].trim();
-      msg.content = msg.content.replace(unclosedRegex, '').trim();
-      if (!msg.thinkContent) {
-        msg.thinkContent = remainingThink;
-      } else if (!msg.thinkContent.includes(remainingThink)) {
-        msg.thinkContent = (msg.thinkContent + '\n' + remainingThink).trim();
-      }
-    }
-  }
-
-  try { msg.htmlContent = marked.parse(msg.content || '') }
-  catch { msg.htmlContent = msg.content }
-}
-
-// ── 防禦機制：串流正常結束但正文為空時的 fallback ──────────────
-// 對應情境：知識庫檢索問答時，模型思考過程（reasoning）可能耗盡 max_tokens
-// 額度，導致串流結束前從未送出正式回答（content），畫面會呈現完全空白。
-function applyEmptyContentFallback(msg) {
-  if (!msg.content?.trim() && msg.thinkContent?.trim()) {
-    msg.content = '> ⚠️ AI 回答被截斷，僅產生思考過程，尚未輸出正式回答，請重新提問或縮小問題範圍再試一次。'
-    msg.thinkExpanded = true
-  }
-}
-
-async function scrollToBottom() {
-  await nextTick()
-  if (messageArea.value) messageArea.value.scrollTop = messageArea.value.scrollHeight
-}
-
-// ── 快速指令：送出預設提示詞 ────────────────────────────────
-async function sendCommand(cmdKey) {
-  if (streaming.value) return
-
-  const cmd = QUICK_COMMANDS.find(c => c.key === cmdKey)
-  const userDisplayText = cmd?.label || cmdKey
-
-  const userMsg = { id: Date.now(), role: 'user', content: userDisplayText, htmlContent: '' }
-  messages.value.push(userMsg)
-  updateHtml(userMsg)
-
-  const capturedRefs = [...referencedArticles.value]
-  referencedArticles.value = []
-  await scrollToBottom()
-
-  streaming.value = true
-  messages.value.push({
-    id: Date.now() + 1, role: 'ai',
-    content: '', htmlContent: '', streaming: true, keywords: [], addedKeywords: [], canApply: false,
-    thinkContent: '', thinkExpanded: false, thinkStreaming: false,
-  })
-  const aiMsg = messages.value[messages.value.length - 1]
-
-  const onThinking = (chunk) => {
-    aiMsg.thinkContent   += chunk
-    aiMsg.thinkStreaming  = true
-    scrollToBottom()
-  }
-  const onDelta = (delta) => {
-    aiMsg.thinkStreaming = false  // thinking ended when first delta arrives
-    aiMsg.content += delta
-    scrollToBottom()
-  }
-  const onDone  = async () => {
-    aiMsg.thinkStreaming = false
-    applyEmptyContentFallback(aiMsg)
-    updateHtml(aiMsg)
-    await nextTick()
-    aiMsg.streaming = false
-    streaming.value = false
-    aiMsg.keywords  = extractKeywords(aiMsg.content)
-    scrollToBottom()
-  }
-  const onError = async () => {
-    aiMsg.thinkStreaming = false
-    aiMsg.streaming = false
-    streaming.value = false
-    aiMsg.content  += '\n\n> ⚠️ AI 服務發生錯誤，請稍後再試。'
-    updateHtml(aiMsg)
-    scrollToBottom()
-  }
-
-  try {
-    abortController = new AbortController()
-    const signal    = abortController.signal
-
-    // 抓指定文章內容
-    let articleContent = ''
-    if (capturedRefs.length) {
-      const fetched = await Promise.allSettled(
-        capturedRefs.map(a => articleService.getById(a.id))
-      )
-      articleContent = fetched
-        .filter(r => r.status === 'fulfilled')
-        .map(r => `\n\n---\n📄 文章「${r.value.title}」：\n${r.value.content || ''}`)
-        .join('')
-    }
-    if (!articleContent && props.contextContent) {
-      articleContent = `\n\n---\n文章內文：\n${props.contextContent}`
-    }
-
-    await aiService.streamSummarize(articleContent, { onThinking, onDelta, onDone, onError }, signal, cmdKey)
-  } catch (err) {
-    if (err.name === 'AbortError') return
-    streaming.value  = false
-    aiMsg.streaming  = false
-    aiMsg.content    = `> ⚠️ 錯誤：${err.message}`
-    updateHtml(aiMsg)
-    ElMessage.error(err.message || 'AI 服務呼叫失敗')
-  } finally {
-    abortController = null
-  }
-}
-
-// ── 送出訊息 ─────────────────────────────────────────────────
-async function sendMessage() {
-  const isCorrect = currentMode.value === 'correct'
-
-  const userInputText = isCorrect ? '請校正目前文章' : inputText.value.trim()
-  if (!userInputText && !selectedFile.value && !referencedArticles.value.length) return
-
-  const userMsg = { id: Date.now(), role: 'user', content: userInputText || '（指定文章問答）', htmlContent: '' }
-  messages.value.push(userMsg)
-  updateHtml(userMsg)
-
-  const capturedFile    = selectedFile.value
-  const capturedInput   = inputText.value.trim()
-  const capturedRefs    = [...referencedArticles.value]
-  inputText.value        = ''
-  referencedArticles.value = []
-  clearFile()
-  await scrollToBottom()
-
-  streaming.value = true
-  // ⚠️ 重要：push 後取 reactive proxy，直接修改原始物件不會觸發 Vue re-render
-  messages.value.push({
-    id: Date.now() + 1, role: 'ai',
-    content: '', htmlContent: '', streaming: true, keywords: [], addedKeywords: [], canApply: false,
-    thinkContent: '', thinkExpanded: false, thinkStreaming: false,
-  })
-  const aiMsg = messages.value[messages.value.length - 1]
-
-  // 串流中直接更新 content（template 用純文字顯示）；結束後才轉 HTML
-  const onThinking = (chunk) => {
-    aiMsg.thinkContent  += chunk
-    aiMsg.thinkStreaming  = true
-    scrollToBottom()
-  }
-  const onDelta = (delta) => {
-    aiMsg.thinkStreaming = false  // thinking ended when first delta arrives
-    aiMsg.content += delta
-    scrollToBottom()
-  }
-  const onDone  = async () => {
-    // 串流結束：先轉換 Markdown HTML，下一 tick 才切換顯示模式避免閃爍
-    aiMsg.thinkStreaming = false
-    applyEmptyContentFallback(aiMsg)
-    updateHtml(aiMsg)
-    await nextTick()
-    aiMsg.streaming = false
-    streaming.value = false
-    if (currentMode.value === 'chat') {
-      aiMsg.keywords = extractKeywords(aiMsg.content)
-    } else {
-      aiMsg.canApply = true
-    }
-    scrollToBottom()
-  }
-  const onError = async () => {
-    aiMsg.thinkStreaming = false
-    aiMsg.streaming = false
-    streaming.value = false
-    aiMsg.content += '\n\n> ⚠️ AI 服務發生錯誤，請稍後再試。'
-    updateHtml(aiMsg)
-    scrollToBottom()
-  }
-
-  try {
-    abortController = new AbortController()
-    const signal    = abortController.signal
-
-    if (currentMode.value === 'chat') {
-      if (capturedRefs.length > 0) {
-        // 組合 prompt：使用者問題 + 指定文章內容 + 當前文章內文
-        const fetched = await Promise.allSettled(
-          capturedRefs.map(a => articleService.getById(a.id)),
-        )
-        const articleContext = fetched
-          .filter(r => r.status === 'fulfilled')
-          .map(r => `\n\n---\n📄 指定文章「${r.value.title}」：\n${r.value.content || ''}`)
-          .join('')
-
-        const contextPart = useContext.value && props.contextContent
-          ? `\n\n---\n文章內文：\n${props.contextContent}`
-          : ''
-
-        const fullContent = (capturedInput || '請分析以上文章內容') + articleContext + contextPart
-        await aiService.streamSummarize(fullContent, { onThinking, onDelta, onDone, onError }, signal)
-
-      } else {
-        // 無 # 指定文章：直接呼叫 AiRAGApi 進行外部問答
-        const user = authStore.user || {}
-        const externalUser = {
-          employee_id: user.員工工號 || 'SYSTEM',
-          name: user.員工姓名 || '使用者',
-          department_code: user.部門代碼 || '',
-          department_name: user.部門名稱 || '',
-          job_title_name: user.職務名稱 || user.級職名稱 || '專員',
-          job_title_level: Number(user.級職 ?? user.級職等級 ?? 10),
-        }
-
-        const contextPart = useContext.value && props.contextContent
-          ? `\n\n---\n目前參考文章內容：\n${props.contextContent}`
-          : ''
-        const question = (capturedInput || '請解答以下問題') + contextPart
-
-        await sendExternalChat(
-          {
-            question,
-            externalUser,
-            params: {
-              ...computedRAGParams.value,
-            },
-          },
-          {
-            signal,
-            onStep: (stepData) => {
-              if (stepData.content) {
-                aiMsg.thinkContent += (aiMsg.thinkContent ? '\n' : '') + `[進度] ${stepData.content}`
-                aiMsg.thinkStreaming = true
-                scrollToBottom()
-              }
-            },
-            onChunk: (chunkData) => {
-              if (chunkData.type === 'reasoning' && chunkData.content) {
-                aiMsg.thinkContent += chunkData.content
-                aiMsg.thinkStreaming = true
-                scrollToBottom()
-              } else if (chunkData.type === 'content' && chunkData.content) {
-                aiMsg.thinkStreaming = false
-                aiMsg.content += chunkData.content
-                scrollToBottom()
-              }
-            },
-            onMessage: (msgData) => {
-              aiMsg.thinkStreaming = false
-              if (msgData.delta) {
-                aiMsg.content = msgData.delta
-                scrollToBottom()
-              }
-            },
-            onSources: (sourcesData) => {
-              if (sourcesData.sources?.length) {
-                // 補上 _expanded 供引用區塊逐筆展開/收合使用
-                aiMsg.sources = sourcesData.sources.map(s => ({ ...s, _expanded: false }))
-              }
-            },
-            onError: async (err) => {
-              await onError()
-            },
-            onDone: async () => {
-              await onDone()
-            },
-          }
-        )
-      }
-
-    } else if (capturedFile) {
-      const fd = new FormData()
-      fd.append('file', capturedFile)
-      await aiService.streamWritingAssist(fd, { onThinking, onDelta, onDone, onError }, signal)
-
-    } else {
-      const content = isCorrect ? props.contextContent : capturedInput
-      await aiService.streamWritingAssist({ content }, { onThinking, onDelta, onDone, onError }, signal)
-    }
-  } catch (err) {
-    if (err.name === 'AbortError') return
-    streaming.value = false
-    aiMsg.streaming = false
-    aiMsg.content   = `> ⚠️ 錯誤：${err.message}`
-    updateHtml(aiMsg)
-    ElMessage.error(err.message || 'AI 服務呼叫失敗')
-  } finally {
-    abortController = null
-  }
+  closeChat(() => emit('update:modelValue', false))
 }
 </script>
 
@@ -1233,7 +666,7 @@ async function sendMessage() {
 
 .context-toggle { font-size: 12px; }
 
-/* 檢索嚴謹度拉桿樣式 */
+/* 檢索與思考模式拉桿樣式 */
 .search-strictness-bar {
   display: flex; flex-direction: column; gap: 4px;
   padding: 6px 10px;
@@ -1241,6 +674,10 @@ async function sendMessage() {
   border-radius: 8px;
   border: 1px solid var(--color-border, #e2e8f0);
 }
+.strictness-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.strictness-col { display: flex; flex-direction: column; gap: 4px; }
+.strictness-col.think-mode-col { flex: 2; min-width: 130px; }
+.strictness-col.data-fetch-col { flex: 8; min-width: 200px; }
 .strictness-header {
   display: flex; align-items: center; justify-content: space-between;
 }

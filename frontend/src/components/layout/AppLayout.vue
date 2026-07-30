@@ -13,7 +13,7 @@
       </aside>
 
       <!-- Main content -->
-      <main class="kb-main">
+      <main class="kb-main" :class="{ 'kb-main--full-bleed': route.meta.fullBleed }">
         <router-view v-slot="{ Component }">
           <transition name="fade" mode="out-in">
             <component :is="Component" />
@@ -31,9 +31,11 @@ import DirectoryTree from '@/components/directory/DirectoryTree.vue'
 import { useDirectoryStore } from '@/store/directory.js'
 import { useAuthStore } from '@/store/auth.js'
 import { onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 
 const auth = useAuthStore()
 const dirStore = useDirectoryStore()
+const route = useRoute()
 
 onMounted(async () => {
   if (auth.user) {
@@ -69,5 +71,11 @@ onMounted(async () => {
   overflow-y: auto;
   padding: var(--main-content-padding);
   background: var(--color-bg);
+}
+
+/* AI 問答等需要自行管理版面/捲動的全高頁面，避免與 .kb-main 疊加成雙重捲軸 */
+.kb-main--full-bleed {
+  overflow: hidden;
+  padding: 0;
 }
 </style>

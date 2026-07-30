@@ -751,6 +751,34 @@ Authorization: Bearer <token>
 
 ---
 
+#### 🔐 GET `/api/attachments/files/{uuid}/extract-text`
+
+抽取附件檔案的純文字內容，供 AI 問答頁面拖曳附件引用使用（見 `docs/DevelopmentProcess/AI_CHAT_MAIN_PAGE_PLAN.md`）。僅支援 PDF、Word（`.doc`/`.docx`），其餘格式回傳 `400`；檔案大小上限 5 MB；掃描圖片型或加密 PDF 可能回傳空字串 `text`，前端需自行提示使用者。權限判斷與下載端點一致（`canAccess` + 跨部門授權）。
+
+**Request Header**
+```
+Authorization: Bearer <token>
+```
+
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "uuid": "uuid-xxx",
+    "name": "filename.pdf",
+    "text": "抽取出的純文字內容..."
+  }
+}
+```
+
+**錯誤情境**
+- `400`：檔案格式不支援，或檔案大小超過 5 MB
+- `403`：無存取權限
+- `404`：檔案不存在
+
+---
+
 ### 4.6 Tag（標籤）
 
 #### 🔐 GET `/api/tags`

@@ -21,6 +21,12 @@ const routes = [
         component: () => import('@/views/HomeView.vue'),
       },
       {
+        path: 'ai-chat',
+        name: 'AiChat',
+        component: () => import('@/views/AiChatView.vue'),
+        meta: { fullBleed: true },
+      },
+      {
         path: 'article/new',
         name: 'ArticleNew',
         component: () => import('@/views/ArticleView.vue'),

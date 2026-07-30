@@ -24,7 +24,8 @@
     "pdf-parse": "^1.1.1",
     "sequelize": "^6.37.8",
     "tedious": "^19.2.1",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "word-extractor": "^1.0.4"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

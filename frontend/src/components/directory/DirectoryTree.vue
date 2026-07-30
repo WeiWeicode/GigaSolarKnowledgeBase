@@ -35,7 +35,12 @@
       @node-drop="onNodeDrop"
     >
       <template #default="{ node, data }">
-        <span class="tree-node" :class="['type-' + data.type, { highlighted: highlightedIds.includes(data.id) }]">
+        <span
+          class="tree-node"
+          :class="['type-' + data.type, { highlighted: highlightedIds.includes(data.id) }]"
+          :draggable="isDraggableNode(data)"
+          @dragstart="onNodeDragStart($event, data)"
+        >
           <el-icon class="node-icon"><component :is="nodeIcon(data)" /></el-icon>
           <el-tooltip :content="data.label" placement="top-start" :show-after="400">
             <span
@@ -172,6 +177,29 @@ function allowDrop(draggingNode, dropNode, type) {
   if (type === 'inner') return ['directory', 'department'].includes(dropType)
   // before / after：只允許同層 directory 之間重排
   return dropType === 'directory'
+}
+
+// ─── 拖曳文章/附件節點至 AI 問答頁面 ──────────────────────────
+// 與 el-tree 內建的 directory 拖曳排序（allowDrag/allowDrop）互不相干：
+// el-tree 只對 .el-tree-node__content 監聽 dragstart，且對 article/attachment
+// 節點的 allowDrag 回傳 false 時會 preventDefault() 中止整個拖曳；
+// 這裡改在內層 <span> 加原生 draggable，並用 stopPropagation() 避免事件
+// 冒泡到 el-tree 的內建監聽器而被取消。
+function isDraggableNode(data) {
+  if (data.type !== 'article' && data.type !== 'attachment') return false
+  return checkItemAccess(data)
+}
+
+function onNodeDragStart(event, data) {
+  event.stopPropagation()
+  if (!isDraggableNode(data)) { event.preventDefault(); return }
+  const payload = {
+    kind: data.type,
+    id: data.type === 'article' ? data.article_id : data.attachment_id,
+    title: data.label,
+  }
+  event.dataTransfer.effectAllowed = 'copy'
+  event.dataTransfer.setData('application/json', JSON.stringify(payload))
 }
 
 /**
@@ -377,6 +405,8 @@ function removeDirectory(node, data) {
 
 /* 拖曳中的節點樣式 */
 .type-directory:has(.more-btn) { cursor: grab; }
+.type-article[draggable="true"],
+.type-attachment[draggable="true"] { cursor: grab; }
 :deep(.el-tree-node.is-drop-inner > .el-tree-node__content) { background: var(--color-primary-light) !important; outline: 2px dashed var(--color-primary); outline-offset: -2px; border-radius: 6px; }
 
 .node-actions { opacity: 0; transition: opacity var(--transition); }

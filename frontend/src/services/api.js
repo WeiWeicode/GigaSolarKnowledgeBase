@@ -657,6 +657,13 @@ export const attachmentService = {
     const res = await http.put(`/attachments/${id}`, formData)
     return normalizeAttachment(res.data)  // Attachment
   },
+
+  // 抽取附件檔案文字內容（AI 問答頁面拖曳附件引用用）
+  async extractFileText(uuid) {
+    // GET /api/v1/attachments/files/:uuid/extract-text
+    const res = await http.get(`/attachments/files/${uuid}/extract-text`)
+    return res.data  // { uuid, name, text }
+  },
 }
 
 
@@ -1007,11 +1014,13 @@ export const aiService = {
 
   /**
    * 文章解析助手（首頁 AI 問答）
-   * @param {string} content
+   * @param {string} content 參考資料內容
    * @param {{ onDelta, onDone, onError }} callbacks
    * @param {AbortSignal} [signal]
+   * @param {string} [mode] 模板 mode_key；'qa' 為針對問題直接作答
+   * @param {string} [question] 使用者的問題（qa 模式使用，與 content 分開傳避免被當成素材）
    */
-  async streamSummarize(content, callbacks, signal, mode = 'default') {
+  async streamSummarize(content, callbacks, signal, mode = 'default', question) {
     const token = sessionStorage.getItem('kb_token')
     const res = await fetch(`${http.defaults.baseURL}/ai/summarize`, {
       method:  'POST',
@@ -1019,7 +1028,7 @@ export const aiService = {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body:   JSON.stringify({ content, mode }),
+      body:   JSON.stringify({ content, mode, question }),
       signal,
     })
     if (!res.ok) {

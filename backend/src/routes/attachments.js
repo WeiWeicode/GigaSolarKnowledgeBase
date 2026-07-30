@@ -61,6 +61,13 @@ router.get('/search', attachmentController.searchAttachments);
 router.get('/files/:uuid/download', attachmentController.downloadFile);
 
 /**
+ * @route GET /api/v1/attachments/files/:uuid/extract-text
+ * @desc  抽取附件檔案文字內容（僅支援 PDF/Word，供 AI 問答頁面拖曳引用使用）
+ * 必須放在 /:id 之前，防止 express 把 'files' 當成 :id
+ */
+router.get('/files/:uuid/extract-text', attachmentController.extractFileText);
+
+/**
  * @route GET /api/v1/attachments/:id
  * @desc  取得單一附件包
  */

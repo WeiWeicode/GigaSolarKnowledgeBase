@@ -10,22 +10,24 @@
 
     <!-- 主導覽選單 -->
     <div class="nav-list">
-      <router-link
-        v-for="item in computedNavItems"
-        :key="item.to"
-        :to="item.to"
-        custom
-        v-slot="{ isActive, navigate }"
-      >
-        <button
-          class="nav-item"
-          :class="{ active: isActive }"
-          @click="navigate"
+      <template v-for="(item, idx) in computedNavItems" :key="item.to || `divider-${idx}`">
+        <div v-if="item.type === 'divider'" class="nav-divider" />
+        <router-link
+          v-else
+          :to="item.to"
+          custom
+          v-slot="{ isActive, navigate }"
         >
-          <el-icon class="nav-icon"><component :is="item.icon" /></el-icon>
-          <span class="nav-label">{{ item.label }}</span>
-        </button>
-      </router-link>
+          <button
+            class="nav-item"
+            :class="{ active: isActive }"
+            @click="navigate"
+          >
+            <el-icon class="nav-icon"><component :is="item.icon" /></el-icon>
+            <span class="nav-label">{{ item.label }}</span>
+          </button>
+        </router-link>
+      </template>
     </div>
 
     <!-- 底部 -->
@@ -59,13 +61,16 @@ const dirStore = useDirectoryStore()
 
 const navItems = [
   { to: '/home', label: '首頁', icon: 'House' },
+  { to: '/ai-chat', label: 'AI問答', icon: 'ChatDotRound' },
+  { type: 'divider' },
   { to: '/article/new', label: '建立文章', icon: 'EditPen' },
   { to: '/attachment/new', label: '上傳文件', icon: 'Upload' },
 ]
 
+// 公開文件範圍：只隱藏「建立文章」「上傳文件」，「首頁」與「AI問答」常駐顯示
 const computedNavItems = computed(() => {
   if (dirStore.viewScope === 'public') {
-    return navItems.filter(item => item.to === '/home')
+    return navItems.filter(item => item.to === '/home' || item.to === '/ai-chat')
   }
   return navItems
 })
@@ -165,5 +170,11 @@ async function onScopeChange(newScope) {
   gap: 4px;
   padding-top: 12px;
   border-top: 1px solid rgba(255,255,255,.1);
+}
+
+.nav-divider {
+  height: 1px;
+  margin: 6px 4px;
+  background: rgba(255,255,255,.12);
 }
 </style>

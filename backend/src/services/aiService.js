@@ -111,6 +111,16 @@ const FALLBACK_SYSTEM_PROMPTS = {
   step_guide:
     '你是一位專業的技術文件整理師，擅長將文章的操作流程或說明整理為清晰可執行的步驟說明。' +
     '步驟要具體可操作，標示注意事項與常見問題，以繁體中文輸出。',
+
+  // 使用者有明確提問時使用：只針對問題作答，不套用固定的摘要結構
+  qa:
+    '你是一位專業的知識庫問答助手。請根據使用者提供的參考資料，直接回答使用者的問題。' +
+    '規則：' +
+    '(1) 只回答使用者問的問題，不要額外輸出「核心摘要」「關鍵重點」「深入分析」「結論與洞察」等未被要求的段落；' +
+    '(2) 答案必須基於參考資料，不要憑空推測；' +
+    '(3) 若參考資料中找不到答案，直接說明資料中未提及，不要編造；' +
+    '(4) 問題涉及設定或操作時，依資料中的實際內容條列具體步驟、路徑與參數值；' +
+    '(5) 以繁體中文回答，善用 Markdown（條列、表格、程式碼區塊）提升可讀性。',
 };
 
 // ── User Prompt Templates Fallbacks ───────────────────────────
@@ -159,6 +169,16 @@ const FALLBACK_USER_TEMPLATES = {
     `## 完整步驟\n1. 步驟一\n2. 步驟二\n（依此類推，每步說明清楚）\n\n` +
     `## 注意事項\n（容易出錯或需要特別注意的地方）\n\n` +
     `## 常見問題 Q&A`,
+
+  // 參考資料放前面、問題放最後：讓模型把「問題」當成要執行的任務，
+  // 而不是當成待分析的素材（先前把問題混進 {content} 就是導致答非所問的原因）
+  qa:
+    `/no_think\n` +
+    `以下是參考資料：\n\n{content}\n\n` +
+    `---\n\n` +
+    `請根據上述參考資料回答我的問題：\n\n**{question}**\n\n` +
+    `請直接針對這個問題作答，不需要輸出文章摘要、關鍵重點或分析架構。` +
+    `若參考資料中沒有相關資訊，請直接說明。`,
 };
 
 // ── 核心 SSE 串流函式 ─────────────────────────────────────────
@@ -316,8 +336,12 @@ async function streamToSSE(systemPrompt, userPrompt, res, config) {
 // ── 公開介面 ──────────────────────────────────────────────────
 /**
  * 文章解析助手（首頁）
+ * @param {string} content 參考資料內容
+ * @param {object} res Express Response（已設好 SSE headers）
+ * @param {string} [mode] 模板 mode_key，例如 summarize / quick_summary / qa
+ * @param {string} [question] 使用者的問題；qa 模式必填，用於填入 {question} 佔位符
  */
-async function streamArticleSummary(content, res, mode) {
+async function streamArticleSummary(content, res, mode, question) {
   const modeKey = mode || 'summarize';
   const config  = await getActiveConfig();
   const prompt  = await getPromptTemplate(modeKey);
@@ -325,7 +349,7 @@ async function streamArticleSummary(content, res, mode) {
   const systemPrompt = prompt ? prompt.system : (FALLBACK_SYSTEM_PROMPTS[modeKey] || FALLBACK_SYSTEM_PROMPTS.summarize);
   const userTemplate = prompt ? prompt.user   : (FALLBACK_USER_TEMPLATES[modeKey]   || FALLBACK_USER_TEMPLATES.summarize);
 
-  const userPrompt = resolveTemplate(userTemplate, { content });
+  const userPrompt = resolveTemplate(userTemplate, { content, question });
 
   return streamToSSE(systemPrompt, userPrompt, res, config);
 }

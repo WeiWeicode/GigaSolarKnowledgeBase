@@ -1,7 +1,6 @@
-const mammoth   = require('mammoth');
-const pdfParse  = require('pdf-parse');
 const aiService = require('../services/aiService');
 const { AiConfig } = require('../models');
+const { extractTextFromBuffer } = require('../helpers/fileTextExtractor');
 
 function setSSEHeaders(res) {
   res.setHeader('Content-Type',       'text/event-stream');
@@ -13,7 +12,7 @@ function setSSEHeaders(res) {
 
 // POST /api/v1/ai/summarize
 async function summarize(req, res) {
-  const { content, mode } = req.body;
+  const { content, mode, question } = req.body;
 
   if (!content || !content.trim()) {
     return res.status(400).json({ success: false, message: '請提供文章內容' });
@@ -22,7 +21,7 @@ async function summarize(req, res) {
   setSSEHeaders(res);
 
   try {
-    await aiService.streamArticleSummary(content, res, mode);
+    await aiService.streamArticleSummary(content, res, mode, question);
   } catch (err) {
     console.error('AI summarize error:', err.message);
     res.write(`data: ${JSON.stringify({ error: 'AI 服務呼叫失敗' })}\n\n`);
@@ -45,17 +44,11 @@ async function writingAssist(req, res) {
 
   if (file) {
     try {
-      if (file.mimetype === 'application/pdf') {
-        const result = await pdfParse(file.buffer);
-        textContent = result.text;
-      } else {
-        const result = await mammoth.extractRawText({ buffer: file.buffer });
-        textContent = result.value;
-      }
+      textContent = await extractTextFromBuffer(file.buffer, file.mimetype);
       sourceFilename = file.originalname;
     } catch (err) {
       console.error('檔案解析失敗:', err.message);
-      return res.status(500).json({ success: false, message: '檔案解析失敗，請確認檔案格式正確' });
+      return res.status(400).json({ success: false, message: '檔案解析失敗，請確認檔案格式正確' });
     }
   }
 
