@@ -6,8 +6,8 @@
         <el-button text circle size="small" class="action-btn" title="重新整理" @click="refreshTree">
           <el-icon><RefreshRight /></el-icon>
         </el-button>
+        <!-- 原本限制：v-if="auth.isManager" -->
         <el-button
-          v-if="auth.isManager"
           text circle size="small" class="action-btn" title="新增最上層目錄"
           @click="startAddDirectory(null)"
         >
@@ -58,7 +58,8 @@
           <!-- sortOrder badge（僅 MANAGER/ADMIN 可看，debug 用） -->
           <!-- <span v-if="auth.isManager && data.type === 'directory'" class="sort-badge">{{ data.sortOrder }}</span> -->
 
-          <span v-if="auth.isManager && data.type === 'directory'" class="node-actions" @click.stop>
+          <!-- 原本限制：v-if="auth.isManager && data.type === 'directory'" -->
+          <span v-if="data.type === 'directory'" class="node-actions" @click.stop>
             <el-dropdown trigger="click" placement="bottom-end">
               <el-button text circle size="small" class="more-btn">
                 <el-icon size="12"><More /></el-icon>
