@@ -31,6 +31,12 @@ router.get('/status', ragSyncController.getStatusList);
 router.post('/status/execute', ragSyncController.executeManual);
 
 /**
+ * @route POST /api/v1/rag-sync/status/repair-captions
+ * @desc  手動指定項目：僅重試失敗的內嵌圖片 AI 描述（不做全量重新切分）
+ */
+router.post('/status/repair-captions', ragSyncController.repairCaptions);
+
+/**
  * @route GET /api/v1/rag-sync/logs
  * @desc  錯誤/事件 Log 列表（分頁 + 篩選）
  */

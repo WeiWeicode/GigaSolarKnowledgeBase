@@ -346,6 +346,54 @@ async function executeManual(items) {
   return results;
 }
 
+// ── 手動指定項目：僅重試失敗的圖片描述（不觸發全量重新切分）──
+// 刻意不複用 syncOne()：那會把 status 改成 outdated 並送出 action="upsert" 全量重切，
+// 正是本功能要避免的；狀態欄位一律不動，caption_failed_count 由 AiRAG 修復完成後回寫。
+async function repairCaptionsManual(items) {
+  const results = [];
+  for (const item of items || []) {
+    const sourceType = item.sourceType || item.source_type;
+    const sourceId   = Number(item.sourceId ?? item.source_id);
+    try {
+      // 下架時 handleUnpublish() 已把 Qdrant point 全部刪除，對已刪除／已下架的文件呼叫修復
+      // 必定掃到 0 個圖片段落，除了空轉還會讓 AiRAG 把 caption_failed_count 覆寫成 0
+      const ctx = await getResourceContext(sourceType, sourceId);
+      if (!ctx) {
+        results.push({ sourceType, sourceId, ok: false, message: '來源資料不存在' });
+        continue;
+      }
+      if (!ctx.isPublished) {
+        results.push({ sourceType, sourceId, ok: false, message: '文件已下架，向量已移除，無需修復圖片描述' });
+        continue;
+      }
+
+      const data = await aiRagIngestClient.repairImageCaptions({
+        docType: sourceType,
+        sourceId,
+        title: ctx.title,
+      });
+      results.push({ sourceType, sourceId, ok: true, taskId: data.taskId });
+    } catch (err) {
+      // 409 代表 AiRAG 端 5 分鐘內已有同一份文件的修復任務在跑（多半是連點兩下），
+      // 屬良性情況：標記 skipped 讓前端以「提示」呈現，也不寫 error log 污染管理端日誌
+      const isDuplicate = err.status === 409;
+      if (!isDuplicate) {
+        await logEvent({
+          sourceType, sourceId, stage: 'notify', level: 'error',
+          message: `圖片描述修復觸發失敗: ${err.message}`,
+        });
+      }
+      results.push({
+        sourceType, sourceId, ok: false, skipped: isDuplicate,
+        message: isDuplicate
+          ? '此文件正由 AiRAG 背景處理中，請稍後再查看結果'
+          : err.message,
+      });
+    }
+  }
+  return results;
+}
+
 // ── 供文章/附件列表附加 ragSyncStatus 欄位 ────────────────────
 async function getStatusMap(sourceType, sourceIds) {
   if (!sourceIds || sourceIds.length === 0) return {};
@@ -394,6 +442,7 @@ module.exports = {
   runScheduledCheck,
   runFullAudit,
   executeManual,
+  repairCaptionsManual,
   getStatusMap,
   rescheduleCron,
   getOrCreateConfig,

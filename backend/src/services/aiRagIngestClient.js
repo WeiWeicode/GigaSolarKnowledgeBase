@@ -95,6 +95,64 @@ async function triggerIngest({ docType, sourceId, title, targetVersion, action, 
   }
 }
 
+/**
+ * 僅重試「AI 描述產生失敗」的內嵌圖片段落（不做全量重新切分）。
+ * AiRAG 端為非同步：回 202 代表已排入佇列，實際結果之後由 AiRAG 直接回寫
+ * rag_sync_status.caption_failed_count（見 docs/DevelopmentProcess/RAG_IMAGE_CAPTION_REPAIR.md）。
+ *
+ * @param {object} params
+ * @param {'article'|'attachment_file'} params.docType
+ * @param {number} params.sourceId
+ * @param {string} [params.title] 僅供 AiRAG log 顯示，不參與段落定位
+ * @returns {Promise<{success: boolean, message: string, taskId: string}>}
+ */
+async function repairImageCaptions({ docType, sourceId, title }) {
+  const baseUrl = process.env.AIRAG_BASE_URL;
+  const { apiKey, knowledgeBaseId } = await getActiveConfig();
+
+  if (!baseUrl || !apiKey) {
+    throw new Error('AIRAG_BASE_URL / AIRAG_INGEST_API_KEY 未設定，無法呼叫 AiRAG 圖片描述修復端點');
+  }
+  if (!knowledgeBaseId) {
+    throw new Error('Ingest 專用知識庫 ID 未設定（請於「API Key 設定」填入，或設定 AIRAG_KNOWLEDGE_BASE_ID）');
+  }
+
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
+
+  const payload = {
+    appId: 'kb',
+    docType,
+    // AiRAG 以 Qdrant payload 中的整數 source_id 比對，字串不會匹配（其 schema 會直接回 422）
+    sourceId: Number(sourceId),
+    knowledgeBaseId,
+    filename: title,
+  };
+
+  try {
+    const response = await axios.post(
+      `${normalizedBaseUrl}/api/external/ingest/repair-captions`,
+      payload,
+      {
+        headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
+        timeout: TIMEOUT_MS,
+      }
+    );
+
+    return response.data;
+  } catch (err) {
+    const detail = err.response?.data?.detail;
+    if (detail) {
+      const detailText = typeof detail === 'string' ? detail : JSON.stringify(detail);
+      const error = new Error(`AiRAG 圖片描述修復觸發失敗 (HTTP ${err.response.status}): ${detailText}`);
+      // 帶出狀態碼供上層分流：409（同一份文件已在處理中）是良性情況，不該當成錯誤寫進 rag_sync_logs
+      error.status = err.response.status;
+      throw error;
+    }
+    throw err;
+  }
+}
+
 module.exports = {
   triggerIngest,
+  repairImageCaptions,
 };

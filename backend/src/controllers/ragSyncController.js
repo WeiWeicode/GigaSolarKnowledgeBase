@@ -114,6 +114,32 @@ async function executeManual(req, res) {
   }
 }
 
+const VALID_SOURCE_TYPES = ['article', 'attachment_file'];
+
+async function repairCaptions(req, res) {
+  try {
+    const { items } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: '請提供要執行的項目' });
+    }
+    // sourceId 非數字時，findByPk() 會帶著 NaN 打進資料庫而拋錯，在此先擋下來換成明確的 400
+    const invalid = items.find(i => {
+      const sourceType = i.sourceType || i.source_type;
+      const sourceId   = Number(i.sourceId ?? i.source_id);
+      return !VALID_SOURCE_TYPES.includes(sourceType) || !Number.isInteger(sourceId);
+    });
+    if (invalid) {
+      return res.status(400).json({ success: false, message: '項目格式錯誤：sourceType 或 sourceId 不正確' });
+    }
+
+    const results = await ragSyncService.repairCaptionsManual(items);
+    return res.json({ success: true, data: results });
+  } catch (error) {
+    console.error('ragSync repairCaptions error:', error.message);
+    return res.status(500).json({ success: false, message: '圖片描述修復觸發失敗' });
+  }
+}
+
 async function getLogs(req, res) {
   try {
     const page     = Math.max(1, parseInt(req.query.page) || 1);
@@ -267,6 +293,7 @@ module.exports = {
   updateConfig,
   getStatusList,
   executeManual,
+  repairCaptions,
   getLogs,
   runAudit,
   getArticleContent,

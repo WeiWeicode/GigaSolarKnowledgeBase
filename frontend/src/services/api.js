@@ -945,6 +945,15 @@ export const ragSyncService = {
     return res.data
   },
 
+  /**
+   * 僅重試失敗的內嵌圖片 AI 描述（不做全量重新切分）：items = [{ sourceType, sourceId }]
+   * AiRAG 端為背景處理，回應只代表「已送出」，修復結果之後才會反映在 captionFailedCount
+   */
+  async repairCaptions(items) {
+    const res = await http.post('/rag-sync/status/repair-captions', { items })
+    return res.data   // { success, data: [{ sourceType, sourceId, ok, skipped, taskId, message }] }
+  },
+
   /** 錯誤/事件 Log 列表（分頁 + 篩選：stage / level / startDate / endDate） */
   async getLogs(params = {}) {
     const res = await http.get('/rag-sync/logs', { params })

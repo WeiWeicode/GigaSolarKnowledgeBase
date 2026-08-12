@@ -312,6 +312,14 @@
             <el-button type="warning" plain :disabled="!ragStatusSelection.length" @click="executeRagStatusManual">
               指定執行切分
             </el-button>
+            <el-button
+              type="warning" plain
+              :disabled="!ragStatusSelection.length"
+              :loading="repairCaptionsLoading"
+              @click="executeRepairCaptionsManual"
+            >
+              重試圖片描述
+            </el-button>
             <el-button type="primary" plain :loading="ragAuditRunning" @click="runRagAudit">全量校驗</el-button>
           </div>
 
@@ -331,7 +339,7 @@
                 </el-tooltip>
                 <el-tooltip
                   v-if="row.captionFailedCount > 0"
-                  content="此文件有內嵌圖片的 AI 描述產生失敗，勾選後點「指定執行切分」可重新產生"
+                  content="此文件有內嵌圖片的 AI 描述產生失敗，勾選後點「重試圖片描述」可只重跑失敗的圖片，不需全量重新切分"
                   placement="top"
                 >
                   <el-tag size="small" type="warning" class="cursor-pointer rag-caption-warning">
@@ -497,6 +505,7 @@ const ragStatusLoading   = ref(false)
 const ragStatusFilter    = reactive({ status: '', sourceType: '', keyword: '' })
 const ragStatusSelection = ref([])
 const ragAuditRunning    = ref(false)
+const repairCaptionsLoading = ref(false)
 
 // ── RAG 同步日誌 ─────────────────────────────────────────────
 const ragLogList     = ref([])
@@ -704,6 +713,36 @@ async function executeRagStatusManual() {
     await loadRagStatusList()
   } catch (e) {
     ElMessage.error('執行失敗：' + (e.message || ''))
+  }
+}
+
+async function executeRepairCaptionsManual() {
+  if (!ragStatusSelection.value.length) return ElMessage.warning('請先勾選項目')
+  repairCaptionsLoading.value = true
+  try {
+    const res = await ragSyncService.repairCaptions(
+      ragStatusSelection.value.map(r => ({ sourceType: r.sourceType, sourceId: r.sourceId }))
+    )
+    const results   = res.data || []
+    const succeeded = results.filter(r => r.ok)
+    // skipped 為 AiRAG 回 409（同一份文件已在處理中），是提示不是錯誤，分開呈現避免管理者誤判為故障
+    const skipped   = results.filter(r => !r.ok && r.skipped)
+    const failed    = results.filter(r => !r.ok && !r.skipped)
+
+    if (succeeded.length) {
+      ElMessage.success(`已送出 ${succeeded.length} 筆圖片描述重試，AiRAG 於背景處理，完成後重新查詢即可看到結果`)
+    }
+    if (skipped.length) {
+      ElMessage.warning(`${skipped.length} 筆略過：${skipped.map(s => s.message).join('；')}`)
+    }
+    if (failed.length) {
+      ElMessage.error(`${failed.length} 筆觸發失敗：${failed.map(f => f.message).join('；')}`)
+    }
+    await loadRagStatusList()
+  } catch (e) {
+    ElMessage.error('重試圖片描述失敗：' + (e.response?.data?.message || e.message || ''))
+  } finally {
+    repairCaptionsLoading.value = false
   }
 }
 

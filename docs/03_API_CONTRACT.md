@@ -870,6 +870,15 @@ Authorization: Bearer <token>
 手動指定項目重新執行切分。
 **Request Body** `{ "items": [ { "sourceType": "article", "sourceId": 12 } ] }`
 
+#### 🔐👑 POST `/api/v1/rag-sync/status/repair-captions`
+僅重試「AI 描述產生失敗」的內嵌圖片段落，**不做全量重新切分**（見 [RAG_IMAGE_CAPTION_REPAIR.md](DevelopmentProcess/RAG_IMAGE_CAPTION_REPAIR.md)）。逐筆呼叫 AiRAG 的 `POST /api/external/ingest/repair-captions`；AiRAG 為背景處理，本端點只代表「已送出」。修復完成後由 AiRAG 直接回寫 `rag_sync_status.caption_failed_count`，同步狀態欄位不受影響。
+**Request Body** `{ "items": [ { "sourceType": "article", "sourceId": 12 } ] }`
+**Response** `{ "success": true, "data": [ { "sourceType", "sourceId", "ok", "skipped", "taskId", "message" } ] }`
+* `ok: true`：已送出，`taskId` 為 AiRAG 佇列任務 ID。
+* `ok: false` 且 `skipped: true`：AiRAG 回 409（同一份文件 5 分鐘內已在處理中），屬提示而非錯誤。
+* `ok: false` 且無 `skipped`：觸發失敗（來源不存在、已下架、AiRAG 設定或連線問題），原因在 `message`。
+**400**：`items` 為空、`sourceType` 不是 `article`/`attachment_file`、或 `sourceId` 非整數。
+
 #### 🔐👑 GET `/api/v1/rag-sync/logs`
 錯誤/事件 Log 列表。**Query** `page`、`pageSize`、`stage`、`level`、`startDate`、`endDate`
 
