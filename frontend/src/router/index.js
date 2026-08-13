@@ -27,6 +27,12 @@ const routes = [
         meta: { fullBleed: true },
       },
       {
+        path: 'ai-history',
+        name: 'AiHistory',
+        component: () => import('@/views/AiHistoryView.vue'),
+        meta: { fullBleed: true },
+      },
+      {
         path: 'article/new',
         name: 'ArticleNew',
         component: () => import('@/views/ArticleView.vue'),

@@ -8,7 +8,7 @@
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { marked } from 'marked'
-import { aiService, articleService, crossDeptService } from '@/services/api.js'
+import { aiService, articleService, crossDeptService, aiChatHistoryService } from '@/services/api.js'
 import { sendExternalChat } from '@/services/AiRAGApi.js'
 import { useDirectoryStore } from '@/store/directory.js'
 import { useAuthStore } from '@/store/auth.js'
@@ -39,6 +39,9 @@ export function useAiChat(state, props, emit) {
     currentMode, inputText, messages, streaming, useContext,
     selectedFile, fileError, strictnessLevel, searchModeLevel = ref(1),
     showMentionDropdown, mentionResults, referencedArticles, referencedFiles,
+    // AiChatPanel.vue 傳入的本地狀態沒有這兩個欄位，給預設 ref 讓彈窗
+    // 也能落地歷史（各自一段對話），不必連帶修改該元件
+    currentSessionUid = ref(null), currentSessionId = ref(null),
   } = state
 
   const dirStore  = useDirectoryStore()
@@ -108,6 +111,10 @@ export function useAiChat(state, props, emit) {
     referencedFiles.value    = []
     inputText.value          = ''
     clearFile()
+    // 「新對話」必須連 session 識別碼一起清掉，否則下一輪問答會被
+    // append 進上一段對話的歷史串（見 AI_CHAT_HISTORY_PLAN.md 6.3）
+    currentSessionUid.value = null
+    currentSessionId.value  = null
   }
 
   // ── 檔案處理（generate 模式的 Word/PDF 上傳） ─────────────────────────
@@ -479,6 +486,49 @@ export function useAiChat(state, props, emit) {
   }
 
   // ── 送出訊息 ─────────────────────────────────────────────────
+  /**
+   * 落地本輪問答到 KB DB（AI 歷史訊息，見 AI_CHAT_HISTORY_PLAN.md 6.3）。
+   *
+   * best-effort：使用者此刻已經看到回答了，落地失敗只記 console.warn，
+   * 不跳錯誤訊息也不影響對話流程（規劃文件 10 節第 3 項）。
+   */
+  async function ensureSessionId(payload) {
+    if (currentSessionId.value) return currentSessionId.value
+    if (!currentSessionUid.value) {
+      currentSessionUid.value = crypto.randomUUID
+        ? crypto.randomUUID()
+        : `kb-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    }
+    const session = await aiChatHistoryService.createSession({
+      sessionUid: currentSessionUid.value,
+      title:      payload.question,
+      searchType: payload.searchType,
+    })
+    currentSessionId.value = session.id
+    return session.id
+  }
+
+  async function persistChatTurn(payload) {
+    try {
+      await aiChatHistoryService.appendMessages(await ensureSessionId(payload), payload)
+    } catch (err) {
+      // 對話在別處被刪掉（AI 歷史頁刪除、或另一個分頁刪除）時後端回 SESSION_NOT_FOUND：
+      // 這一輪不該就此遺失，改開一段新對話重送一次
+      if (err?.code === 'SESSION_NOT_FOUND') {
+        currentSessionUid.value = null
+        currentSessionId.value  = null
+        try {
+          await aiChatHistoryService.appendMessages(await ensureSessionId(payload), payload)
+          return
+        } catch (retryErr) {
+          console.warn('[useAiChat] 改開新對話後仍落地失敗:', retryErr?.message || retryErr)
+          return
+        }
+      }
+      console.warn('[useAiChat] AI 歷史訊息落地失敗（不影響本次對話）:', err?.message || err)
+    }
+  }
+
   async function sendMessage() {
     const isCorrect = currentMode.value === 'correct'
 
@@ -508,6 +558,11 @@ export function useAiChat(state, props, emit) {
     })
     const aiMsg = messages.value[messages.value.length - 1]
 
+    // 落地歷史用：送給 AiRAG 的問題字串會額外接上文章內文，與畫面顯示的
+    // userMsg.content 不同；Mongo 回填必須用實際送出的那一份才比對得到
+    let ragQuestion     = null
+    let earlyTerminated = false
+
     // 串流中直接更新 content（template 用純文字顯示）；結束後才轉 HTML
     const onThinking = (chunk) => {
       aiMsg.thinkContent  += chunk
@@ -529,6 +584,16 @@ export function useAiChat(state, props, emit) {
       streaming.value = false
       if (currentMode.value === 'chat') {
         aiMsg.keywords = extractKeywords(aiMsg.content)
+        // 只落地一般問答；產生／校正文章屬一次性操作，不記入歷史（規劃文件 8 節第 2 項）。
+        // 刻意不 await：落地是加值行為，不該讓使用者等它完成
+        persistChatTurn({
+          question:          userMsg.content,
+          matchQuestion:     ragQuestion,
+          answer:            aiMsg.content,
+          sources:           aiMsg.sources,
+          isEarlyTerminated: earlyTerminated,
+          searchType:        computedRAGParams.value.search_type,
+        })
       } else {
         aiMsg.canApply = true
       }
@@ -601,6 +666,7 @@ export function useAiChat(state, props, emit) {
             ? `\n\n---\n目前參考文章內容：\n${props.contextContent}`
             : ''
           const question = (capturedInput || '請解答以下問題') + contextPart
+          ragQuestion = question
 
           await sendExternalChat(
             {
@@ -632,6 +698,7 @@ export function useAiChat(state, props, emit) {
               },
               onMessage: (msgData) => {
                 aiMsg.thinkStreaming = false
+                earlyTerminated = true
                 if (msgData.delta) {
                   aiMsg.content = msgData.delta
                   scrollToBottom()

@@ -526,9 +526,9 @@ async function confirmFileSelection() {
   background: rgba(124,58,237,.06); border-radius: 0 6px 6px 0; color: var(--color-text-secondary);
 }
 :deep(.markdown-body code) { background: rgba(0,0,0,.07); padding: 1px 5px; border-radius: 3px; font-size: 12px; font-family: 'Courier New', monospace; }
-:deep(.markdown-body pre) { background: #f1f5f9; padding: 10px 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
+:deep(.markdown-body pre) { background: #f1f5f9; padding: 10px 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; max-width: 100%; }
 :deep(.markdown-body pre code) { background: none; padding: 0; font-size: 12px; line-height: 1.5; }
-:deep(.markdown-body table) { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12px; }
+:deep(.markdown-body table) { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12px; display: block; overflow-x: auto; }
 :deep(.markdown-body th), :deep(.markdown-body td) { border: 1px solid var(--color-border); padding: 5px 10px; text-align: left; }
 :deep(.markdown-body th) { background: var(--color-surface-2); font-weight: 600; }
 

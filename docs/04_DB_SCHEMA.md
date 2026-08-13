@@ -605,3 +605,56 @@ rag_sync_status（無實體 FK，邏輯關聯）
 | `occurred_at` | `DATETIME2` | NOT NULL, DEFAULT GETDATE() | |
 
 **索引**：`occurred_at DESC`
+
+---
+
+## 20. ai_chat_sessions / ai_chat_messages（AI 歷史訊息）
+
+> 詳細規劃見 [docs/DevelopmentProcess/AI_CHAT_HISTORY_PLAN.md](DevelopmentProcess/AI_CHAT_HISTORY_PLAN.md)。
+>
+> **為什麼對話內容要在 KB 這邊再存一份**：AiRAG 的 MongoDB `external_chat_logs` 是「單輪問答稽核紀錄」——沒有 `session_id`、`_id` 也不回傳給呼叫端、且為 best-effort 寫入，**無法還原「哪幾輪屬於同一段對話」**。因此對話結構由 KB 自行落地，Mongo 僅透過 `ai_chat_messages.mongo_log_id` 做關聯回填。同一段問答同時存在於兩邊是刻意取捨（換取對話結構的可靠性），不是設計缺陷。
+>
+> 兩張表由 `backend/src/index.js` 以 `sync({ force: false })` 建立（比照 `rag_sync_*`）；`資料庫/01_create_ai_chat_tables.sql` 提供等價的手動建表腳本，正常部署不需執行。
+
+### 20.1 ai_chat_sessions（對話主檔）
+
+| 欄位 | 型別 | 限制 | 說明 |
+|---|---|---|---|
+| `id` | `INT` | PK, IDENTITY | |
+| `session_uid` | `NVARCHAR(64)` | NOT NULL, UNIQUE | 前端產生的 UUID，讓前端在對話落地前即可持有識別碼 |
+| `account` | `NVARCHAR(50)` | NOT NULL | 擁有者員工工號（對應 NaNa DB，**無 FK**，比照 `user_tokens.account`） |
+| `title` | `NVARCHAR(200)` | NULL | 系統自動標題：建立對話時取第一則提問前 30 字 |
+| `custom_title` | `NVARCHAR(200)` | NULL | 使用者自訂標題，有值時前端優先顯示 |
+| `is_pinned` | `BIT` | NOT NULL, DEFAULT 0 | 釘選（置頂） |
+| `is_favorite` | `BIT` | NOT NULL, DEFAULT 0 | 加入最愛 |
+| `is_hidden` | `BIT` | NOT NULL, DEFAULT 0 | **刪除＝隱藏**（軟刪除），不做實體刪除 |
+| `sort_order` | `INT` | NOT NULL, DEFAULT 0 | 手動排序，數字小者在前 |
+| `message_count` | `INT` | NOT NULL, DEFAULT 0 | 訊息則數（含 user + ai） |
+| `last_message_at` | `DATETIME2` | NULL | 最後一則訊息時間，列表預設排序依據 |
+| `knowledge_base_id` | `NVARCHAR(255)` | NULL | 本對話使用的 AiRAG 知識庫 ID（快照） |
+| `search_type` | `NVARCHAR(50)` | NULL | 最後一次使用的檢索模式（`KB_hybrid` / `KB_semantic_hybrid`） |
+| `created_at` | `DATETIME2` | NOT NULL, DEFAULT GETDATE() | |
+| `updated_at` | `DATETIME2` | NOT NULL, DEFAULT GETDATE() | |
+
+**唯一索引**：`session_uid`
+**索引**：`(account, is_hidden, is_pinned, last_message_at DESC)` — 列表查詢固定為「本人 + 未隱藏」，排序為 `is_pinned DESC, sort_order, last_message_at DESC`
+
+### 20.2 ai_chat_messages（對話訊息）
+
+| 欄位 | 型別 | 限制 | 說明 |
+|---|---|---|---|
+| `id` | `INT` | PK, IDENTITY | |
+| `session_id` | `INT` | NOT NULL, FK → `ai_chat_sessions.id` (CASCADE) | |
+| `seq` | `INT` | NOT NULL | 對話內序號，從 1 遞增。**順序不依賴時間戳**，避免同秒寫入的兩則訊息排序不穩定 |
+| `role` | `NVARCHAR(10)` | NOT NULL | `'user'` \| `'ai'` |
+| `content` | `NVARCHAR(MAX)` | NOT NULL | Markdown 原文；HTML 由前端即時渲染，不落地 |
+| `sources_json` | `NVARCHAR(MAX)` | NULL | 引用來源精簡 JSON（`filename` / `chunk_id` / `score`），僅 `role='ai'` |
+| `mongo_log_id` | `NVARCHAR(50)` | NULL | **關聯 MongoDB `external_chat_logs._id`**；回填失敗留 NULL，不影響任何功能 |
+| `mongo_matched_at` | `DATETIME2` | NULL | 回填成功時間，NULL = 尚未比對到 |
+| `elapsed_ms` | `INT` | NULL | 由 Mongo 回填的本輪耗時 |
+| `is_early_terminated` | `BIT` | NOT NULL, DEFAULT 0 | 對應 SSE `event: message` 的權限不足／低於門檻情境 |
+| `created_at` | `DATETIME2` | NOT NULL, DEFAULT GETDATE() | |
+
+**索引**：`(session_id, seq)`、`mongo_log_id`
+
+> ⚠️ **時區**：`created_at` 為 KB DB 本地時間，而 Mongo `external_chat_logs.created_at` 是 **UTC**（AiRAG 用 `datetime.utcnow`）。回填比對時必須轉換，否則差 8 小時、永遠比對不到。

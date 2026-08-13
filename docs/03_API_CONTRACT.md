@@ -897,6 +897,55 @@ Authorization: Bearer <token>
 
 ---
 
+### 4.13 AI Chat History（AI 歷史訊息）
+
+> 詳細規劃見 [docs/DevelopmentProcess/AI_CHAT_HISTORY_PLAN.md](DevelopmentProcess/AI_CHAT_HISTORY_PLAN.md)。
+>
+> **擁有權**：所有端點都以 `account = 登入者員工工號` 為查詢條件，非本人的對話一律回 **404**（不回 403，避免洩漏「這個 id 存在」）。第一期不提供管理員檢視他人紀錄的端點。
+
+#### 🔐 GET `/api/v1/ai-chats`
+對話列表。
+**Query** `keyword`（同時比對標題、自訂標題與訊息內文）、`isPinned`、`isFavorite`、`includeHidden`（預設 `false`）、`page`、`pageSize`（預設 20，上限 100）
+**排序**：`is_pinned DESC, sort_order ASC, last_message_at DESC, id DESC`
+**Response** `{ "success": true, "data": { "items": Session[], "total", "page", "pageSize" } }`
+`Session` = `{ id, sessionUid, title, customTitle, displayTitle, isPinned, isFavorite, isHidden, sortOrder, messageCount, lastMessageAt, knowledgeBaseId, searchType, createdAt }`
+`displayTitle` 由後端算好（`customTitle` → `title` → `"未命名對話"`），前端直接顯示即可，不需重複判斷。
+
+#### 🔐 POST `/api/v1/ai-chats`
+建立對話。
+**Request Body** `{ "sessionUid", "title?", "knowledgeBaseId?", "searchType?" }`
+`title` 帶入第一則提問原文即可，後端會自動截為前 30 字存入 `title` 欄位。
+**Response** `201` `{ "success": true, "data": Session }`
+**冪等**：`sessionUid` 已存在且屬於同一人時，直接回傳既有對話（前端重送不會建出兩筆）。
+**400**：缺 `sessionUid`。**409**：`sessionUid` 已被其他使用者使用。
+
+#### 🔐 PUT `/api/v1/ai-chats/sort`
+批次排序。**Request Body** `{ "orders": [ { "id": 1, "sortOrder": 0 } ] }`
+**Response** `{ "success": true, "data": { "updated": 3 } }`（`updated` 為實際異動筆數，非本人的 id 會被略過）
+
+#### 🔐 GET `/api/v1/ai-chats/:id`
+單一對話 + 全部訊息（依 `seq` 遞增）。
+**Response** `{ "success": true, "data": { ...Session, "messages": Message[] } }`
+`Message` = `{ id, seq, role, content, sources[], mongoLogId, elapsedMs, isEarlyTerminated, createdAt }`
+
+#### 🔐 PATCH `/api/v1/ai-chats/:id`
+部分更新。**Request Body** `{ "customTitle?", "isPinned?", "isFavorite?", "sortOrder?" }`
+`customTitle` 傳空字串代表清除自訂標題，顯示會回落到系統自動標題。
+
+#### 🔐 DELETE `/api/v1/ai-chats/:id`
+**軟刪除**：只設 `is_hidden = 1`，不做實體刪除。第一期未提供還原端點。
+
+#### 🔐 POST `/api/v1/ai-chats/:id/messages`
+追加一輪問答，後端一次寫入 `user` + `ai` 兩筆訊息並更新 `message_count` / `last_message_at`（同一交易內）。
+**Request Body** `{ "question", "answer", "matchQuestion?", "sources?", "isEarlyTerminated?", "searchType?" }`
+`sources` 直接傳 AiRAG `event: sources` 的原始陣列即可，後端只留 `filename` / `chunk_id` / `score`。
+`matchQuestion` 為前端**實際送給 AiRAG** 的提問字串（會額外接上目前參考文章內文），**只用於比對 Mongo 稽核紀錄、不會存進 `content`**；未帶時退回用 `question` 比對。畫面顯示的使用者輸入與送給 AiRAG 的字串不同，少了這個欄位會導致 `mongoLogId` 永遠回填不到。
+**Response** `201` `{ "success": true, "data": { "session": Session, "messages": Message[] } }`
+**400**：缺 `question`。
+**副作用**：回應送出後以 `setImmediate` 非同步比對 AiRAG MongoDB 的 `external_chat_logs`，回填 `mongoLogId` / `elapsedMs`。**回填失敗不影響本端點結果**，該兩欄位維持 `null`。
+
+---
+
 ## 5. 權限模型
 
 ### 5.1 使用者角色

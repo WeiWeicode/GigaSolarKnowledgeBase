@@ -19,6 +19,8 @@ const AiPromptTemplate = require('./AiPromptTemplate');
 const RagSyncStatus = require('./RagSyncStatus');
 const RagSyncConfig = require('./RagSyncConfig');
 const RagSyncLog    = require('./RagSyncLog');
+const AiChatSession = require('./AiChatSession');
+const AiChatMessage = require('./AiChatMessage');
 
 
 // ── 中間表 Model（定義在此，不另開檔案）─────────────────────
@@ -118,6 +120,10 @@ CommentRead.belongsTo(Comment, { foreignKey: 'comment_id' });
 Comment.hasMany(Notification, { foreignKey: 'comment_id' });
 Notification.belongsTo(Comment, { foreignKey: 'comment_id' });
 
+// AiChatSession → AiChatMessage (1:N)
+AiChatSession.hasMany(AiChatMessage, { foreignKey: 'session_id', as: 'Messages' });
+AiChatMessage.belongsTo(AiChatSession, { foreignKey: 'session_id' });
+
 // ── 匯出 ─────────────────────────────────────────────────────
 module.exports = {
   sequelize,
@@ -144,4 +150,6 @@ module.exports = {
   RagSyncStatus,
   RagSyncConfig,
   RagSyncLog,
+  AiChatSession,
+  AiChatMessage,
 };

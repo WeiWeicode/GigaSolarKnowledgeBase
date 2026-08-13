@@ -10,7 +10,9 @@ const { initKBPool, initNaNaPool, closeAllPools } = require('./config/db');
 const {
   sequelize, UserExtraDepartment, Tag, AiConfig, AiPromptTemplate,
   RagSyncStatus, RagSyncConfig, RagSyncLog, UserRole,
+  AiChatSession, AiChatMessage,
 } = require('./models');
+const mongo = require('./config/mongo');
 const { seedIfEmpty } = require('./scripts/seedDirectories');
 const { seedAiPrompts } = require('./scripts/seedAiPrompts');
 const ragSyncService = require('./services/ragSyncService');
@@ -45,6 +47,7 @@ app.use(`${API}/comments`,      require('./routes/comments_standalone'));
 app.use(`${API}/notifications`,      require('./routes/notifications'));
 app.use(`${API}/cross-departments`,  require('./routes/crossDepartments'));
 app.use(`${API}/ai`,                 require('./routes/ai'));
+app.use(`${API}/ai-chats`,           require('./routes/aiChatHistory'));
 app.use(`${API}/rag-sync`,           require('./routes/ragSync'));
 app.use(`${API}/rag-sync-content`,   require('./routes/ragSyncContent'));
 
@@ -94,6 +97,11 @@ async function startServer() {
       await RagSyncConfig.create({});
     }
     console.log('✅ rag_sync_status, rag_sync_config, rag_sync_logs 資料表已就緒');
+
+    // 2.1.2 AI 歷史訊息兩張表（session 需先於 message 建立，後者有 FK 指向前者）
+    await AiChatSession.sync({ force: false });
+    await AiChatMessage.sync({ force: false });
+    console.log('✅ ai_chat_sessions, ai_chat_messages 資料表已就緒');
 
     // 2.2 Tags 表擴欄（新增 departments / custom_order / click_count / is_public）
     //     使用原生 SQL 逐欄判斷，避免 Sequelize alter:true 在 MSSQL UNIQUE 語法問題
@@ -162,7 +170,7 @@ async function startServer() {
   }
 }
 
-process.on('SIGINT',  async () => { await closeAllPools(); process.exit(0); });
-process.on('SIGTERM', async () => { await closeAllPools(); process.exit(0); });
+process.on('SIGINT',  async () => { await closeAllPools(); await mongo.close(); process.exit(0); });
+process.on('SIGTERM', async () => { await closeAllPools(); await mongo.close(); process.exit(0); });
 
 startServer();

@@ -1074,4 +1074,58 @@ export const aiService = {
 }
 
 
+// ── AI Chat History（AI 歷史訊息）─────────────────────────────
+// 對應 docs/DevelopmentProcess/AI_CHAT_HISTORY_PLAN.md 5 節
+// 後端回傳已是 camelCase（含算好的 displayTitle），不需要額外 normalize
+export const aiChatHistoryService = {
+  /** 對話列表（keyword / isPinned / isFavorite / includeHidden / page / pageSize） */
+  async getSessions(params = {}) {
+    const res = await http.get('/ai-chats', { params })
+    return res.data   // { items, total, page, pageSize }
+  },
+
+  /** 建立對話。sessionUid 重複時後端回既有對話，前端重送不會建出兩筆 */
+  async createSession({ sessionUid, title, knowledgeBaseId, searchType }) {
+    const res = await http.post('/ai-chats', { sessionUid, title, knowledgeBaseId, searchType })
+    return res.data
+  },
+
+  /** 單一對話 + 全部訊息 */
+  async getSessionDetail(id) {
+    const res = await http.get(`/ai-chats/${id}`)
+    return res.data
+  },
+
+  /** 部分更新：customTitle / isPinned / isFavorite / sortOrder */
+  async updateSession(id, patch) {
+    const res = await http.patch(`/ai-chats/${id}`, patch)
+    return res.data
+  },
+
+  /** 刪除＝隱藏（軟刪除），資料仍留在 DB */
+  async deleteSession(id) {
+    const res = await http.delete(`/ai-chats/${id}`)
+    return res.data
+  },
+
+  /**
+   * 追加一輪問答（user + ai 各一則）
+   * matchQuestion：實際送給 AiRAG 的提問字串（會多接文章內文），只用於比對
+   * Mongo 稽核紀錄、不會存進 content；未帶時後端回退用 question 比對
+   */
+  async appendMessages(id, { question, matchQuestion, answer, sources, isEarlyTerminated, searchType }) {
+    const res = await http.post(`/ai-chats/${id}/messages`, {
+      question, matchQuestion, answer, sources, isEarlyTerminated, searchType,
+    })
+    return res.data
+  },
+
+  /** 批次排序：orders = [{ id, sortOrder }] */
+  async updateSortOrders(orders) {
+    const res = await http.put('/ai-chats/sort', { orders })
+    return res.data
+  },
+}
+
+
 export default http

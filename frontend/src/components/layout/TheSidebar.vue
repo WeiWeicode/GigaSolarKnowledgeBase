@@ -32,6 +32,12 @@
 
     <!-- 底部 -->
     <div class="nav-bottom">
+      <router-link to="/article/32" custom v-slot="{ isActive, navigate }">
+        <button class="nav-item" :class="{ active: isActive }" @click="navigate">
+          <el-icon class="nav-icon"><Reading /></el-icon>
+          <span class="nav-label">操作手冊</span>
+        </button>
+      </router-link>
       <router-link to="/settings" custom v-slot="{ isActive, navigate }">
         <button class="nav-item" :class="{ active: isActive }" @click="navigate">
           <el-icon class="nav-icon"><Setting /></el-icon>
@@ -62,15 +68,18 @@ const dirStore = useDirectoryStore()
 const navItems = [
   { to: '/home', label: '首頁', icon: 'House' },
   { to: '/ai-chat', label: 'AI問答', icon: 'ChatDotRound' },
+  { to: '/ai-history', label: 'AI歷史', icon: 'Clock' },
   { type: 'divider' },
   { to: '/article/new', label: '建立文章', icon: 'EditPen' },
   { to: '/attachment/new', label: '上傳文件', icon: 'Upload' },
 ]
 
-// 公開文件範圍：只隱藏「建立文章」「上傳文件」，「首頁」與「AI問答」常駐顯示
+// 公開文件範圍：只隱藏「建立文章」「上傳文件」，「首頁」「AI問答」「AI歷史」常駐顯示
+const ALWAYS_VISIBLE_PATHS = ['/home', '/ai-chat', '/ai-history']
+
 const computedNavItems = computed(() => {
   if (dirStore.viewScope === 'public') {
-    return navItems.filter(item => item.to === '/home' || item.to === '/ai-chat')
+    return navItems.filter(item => ALWAYS_VISIBLE_PATHS.includes(item.to))
   }
   return navItems
 })

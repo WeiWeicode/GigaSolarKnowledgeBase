@@ -139,7 +139,7 @@
                   <label class="field-label">文件上架</label>
                   <el-radio-group v-model="form.isPublished" size="small">
                     <el-radio :value="true">上架</el-radio>
-                    <el-radio :value="false">下架</el-radio>
+                    <el-radio :value="false">下架(移至垃圾桶)</el-radio>
                   </el-radio-group>
                 </div>
               </el-col>
