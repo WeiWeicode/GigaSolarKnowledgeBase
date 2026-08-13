@@ -14,11 +14,76 @@
 | B-08 | 🟡 中 | Article/Tag | 新增 `PATCH /api/v1/articles/:id/tags` 輕量 endpoint（AI 建議標籤一鍵加入） | ✅ 已修正 |
 | B-12 | 🟡 中 | AI | AI 提示詞與模型配置改為資料庫存取，改寫 aiService.js 從 DB 讀取並整合 Local 快取 | ✅ 已修正 |
 | B-13 | 🔴 高 | AI | vLLM 思考標籤與 API 欄位自適應（增加 ai_tool 欄位及標籤切換） | ✅ 已修正 |
+| B-14 | 🔴 高 | Search | 部門模式搜尋硬性排除 `is_public = true`，導致掛在部門目錄下的公開文章／附件「樹上看得到、搜尋找不到」 | ✅ 已修正 |
 
 
 ---
 
 ## 已修正項目
+
+### B-14｜部門模式搜尋找不到公開文章（樹狀圖看得到但搜尋 0 筆）
+
+- **狀態**：✅ 已修正（2026-08-13）
+
+**問題描述：**
+
+在「部門文件」模式下，左側目錄樹可看到 `碩禾電子材料 / 資訊服務部 / 通用 / 知識庫操作說明`，但首頁搜尋「知識庫」回傳「找到 0 筆結果」。
+
+**根本原因：**
+
+搜尋的範圍條件與目錄樹的範圍條件不一致。
+
+- 目錄樹（`directoryController.getTree`，部門模式）以 `directories.dept_code = 部門代碼` 取節點，**不看** `is_public`，因此公開文章只要掛在該部門目錄下就會顯示。
+- 搜尋（`articleController.searchArticles` / `attachmentController.searchAttachments`）在 `scope === 'dept'` 時直接 `where.is_public = false`，把所有公開內容從 SQL 層排除。
+
+實際資料驗證（唯讀查詢 KB DB）：
+
+| id | title | is_published | is_public | access_dept | access_level |
+|----|-------|--------------|-----------|-------------|--------------|
+| 32 | 知識庫操作說明 | true | **true** | S1800 | 10 |
+
+- `WHERE is_published = 1 AND is_public = 0 AND title LIKE '%知識庫%'` → **0 筆**（等同 dept 模式搜尋）
+- `WHERE is_published = 1 AND is_public = 1 AND title LIKE '%知識庫%'` → **1 筆**（等同 public 模式搜尋）
+
+亦即：這篇文章只有切到「公開文件」模式才搜得到，但它同時出現在部門目錄樹上，使用者自然預期在部門模式搜得到。目前全庫共有 4 篇 `is_public = true` 的文章，只要掛在部門目錄下都有相同症狀；附件搜尋邏輯完全相同，症狀一致。
+
+**修正內容（2026-08-13）：**
+
+讓 `scope = 'dept'` 的搜尋範圍與部門目錄樹一致 —— 搜尋「掛在該部門目錄下的內容」，而非「非公開內容」：
+
+1. 移除 `scope === 'dept'` 時的 `where.is_public = false` 與 `access_dept` 的 `Op.or` 條件。
+2. 改以 `directories` 表界定範圍：查出 `dept_code = deptCode AND type = 'article'`（附件為 `type = 'attachment'`）的 `article_id` / `attachment_id`，以 `id IN (...)` 加入 `andConditions`。
+3. `deptCode` 未帶入時取得空集合 → 回傳 0 筆，與 `getTree` 部門模式（`dept_code = undefined` 取不到節點）行為一致。
+4. 保留既有的 `canAccess()` 後置過濾，權限管控不變。
+
+- `backend/src/controllers/articleController.js`：`searchArticles` 的 `scope === 'dept'` 分支。
+- `backend/src/controllers/attachmentController.js`：`searchAttachments` 的 `scope === 'dept'` 分支。
+
+**驗證方式（直接以假 req/res 呼叫 controller，對正式 KB DB 唯讀查詢）：**
+
+| 案例 | 結果 |
+|------|------|
+| `dept` / S1800 / `q=知識庫` | 1 筆（知識庫操作說明）← 修正前為 0 |
+| `public` / `q=知識庫` | 1 筆（未受影響） |
+| `dept` / S1700 / `q=知識庫` | 0 筆（跨部門未外洩） |
+| `dept` / S1800 / 無關鍵字 | 10 筆，與部門目錄樹的文章節點一致（回歸：私有文章仍搜得到） |
+| `dept` / 無 `deptCode` | 0 筆 |
+| `dept` / S1800 附件、`public` 附件 | 12 筆 / 6 筆，與目錄樹一致 |
+
+**尚未處理的附帶發現（次要，優先度低）：**
+
+- `is_published: true` 為固定條件，但目錄樹允許 ADMIN / MANAGER 看到未發佈項目 → 管理者在樹上看得到草稿，搜尋卻找不到。
+- 關鍵字未跳脫 LIKE 萬用字元，搜尋 `%` 或 `_` 會命中全部資料（`backend/src/controllers/articleController.js`、`attachmentController.js`）。
+- 前端 `HomeView.vue` 的 `onSearch` 以 `keyword.value.trim()` 判斷是否搜尋，但送出的是未 trim 的 `keyword.value`，前後空白會導致搜不到。
+- `scope = 'dept'` 目前以 `access_dept` 判斷部門，`access_dept` 為 NULL / `''` 的私有內容會跨部門進入搜尋結果（再由 `canAccess()` 攔截）。目前資料庫無此類資料，屬潛在風險。
+
+**相關檔案：**
+- `backend/src/controllers/articleController.js`（`searchArticles`）
+- `backend/src/controllers/attachmentController.js`（`searchAttachments`）
+- `backend/src/controllers/directoryController.js`（`getTree`，範圍基準）
+- `frontend/src/views/HomeView.vue`（`onSearch`）
+
+---
 
 ### [B-08] AI 建議標籤：新增 `PATCH /api/v1/articles/:id/tags` endpoint
 - **狀態**：✅ 已修正（2026-05-20）

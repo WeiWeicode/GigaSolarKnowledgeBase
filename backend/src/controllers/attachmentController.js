@@ -125,18 +125,19 @@ async function searchAttachments(req, res) {
     if (scope === 'public') {
       where.is_public = true;
     } else if (scope === 'dept') {
-      where.is_public = false;
-      // access_dept 為 NULL（職級/人員限制）或明確屬於此部門的私有內容均應納入
-      // 再由 canAccess() 做最終存取判斷，防止跨部門資料外洩
-      if (deptCode) {
-        andConditions.push({
-          [Op.or]: [
-            { access_dept: deptCode },
-            { access_dept: null },
-            { access_dept: '' },   // MSSQL: 空字串 '' ≠ NULL，前端表單未設部門時存入 ''，需明確匹配
-          ],
-        });
-      }
+      // B-14: 部門模式的搜尋範圍需與部門目錄樹一致（同 articleController.searchArticles）。
+      // 掛在該部門目錄下的公開附件也會顯示在樹上，因此搜尋改以目錄節點界定範圍，
+      // 不再用 is_public / access_dept 過濾；最終存取管控仍由 canAccess() 把關。
+      const dirNodes = deptCode
+        ? await Directory.findAll({
+            where: { type: 'attachment', dept_code: deptCode },
+            attributes: ['attachment_id'],
+          })
+        : [];
+      const attachmentIds = [...new Set(
+        dirNodes.map(d => d.attachment_id).filter(id => id !== null && id !== undefined)
+      )];
+      andConditions.push({ id: { [Op.in]: attachmentIds } });
     }
 
     if (andConditions.length > 0) {
