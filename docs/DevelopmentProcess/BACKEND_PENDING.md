@@ -15,7 +15,38 @@
 | B-12 | 🟡 中 | AI | AI 提示詞與模型配置改為資料庫存取，改寫 aiService.js 從 DB 讀取並整合 Local 快取 | ✅ 已修正 |
 | B-13 | 🔴 高 | AI | vLLM 思考標籤與 API 欄位自適應（增加 ai_tool 欄位及標籤切換） | ✅ 已修正 |
 | B-14 | 🔴 高 | Search | 部門模式搜尋硬性排除 `is_public = true`，導致掛在部門目錄下的公開文章／附件「樹上看得到、搜尋找不到」 | ✅ 已修正 |
+| B-15 | 🔴 高 | DevOps/Perf | devopsReporter 攔截回應時未解構 Sequelize Model，觸發循環參照與深層遞迴卡死 Event Loop 約 3 秒 | ⏳ 待修 |
 
+---
+
+## 待修項目詳細說明
+
+### B-15｜devopsReporter 攔截回應未脫殼，導致循環參照指數級遞迴卡死 Event Loop 約 3 秒
+
+- **狀態**：⏳ 待修（2026-09-18）
+- **完整調查報告**：請參閱 `docs/DevelopmentProcess/DEVOPS_REPORTER_PERFORMANCE_ISSUE.md`
+
+**問題描述：**
+引入 `backend/src/lib/devopsReporter.js`（DevOpsDiagram 觀測 SDK）後，前端頁面載入時偶發出現所有並行 API 請求延遲高達 2.5 ~ 3 秒。後端 Docker log 頻繁輸出：
+```text
+[devops-reporter] 組裝紀錄失敗: Converting circular structure to JSON
+   --> starting at object with constructor 'Object'
+   |     property 'parent' -> object with constructor 'Object'
+   --- property 'through' closes the circle
+```
+
+**根本原因：**
+1. 控制器回傳 Sequelize Model 實例（例如 `Article.findByPk(id, { include: [Tag] })`）。Sequelize 多對多關聯包含 `through`（`ArticleTag`）與指回文章的 `parent` 循環參照。
+2. `devopsReporter.js` 覆寫 `res.json` 時，直接儲存原始未解構的 Model 實例到 `responseBody`。
+3. `res.on('finish')` 呼叫 `maskDeep(responseBody)`，將其當成一般字典物件進行 `Object.entries()`，因缺少 `.toJSON()` 處理與 `WeakSet` 循環參照偵測，陷入 12 層指數級展開，造成單次運算建立數十萬個物件，100% 阻塞 Node.js 事件循環（Event Loop）達 1~3 秒。
+4. 最終在 `depth > 12` 帶入原循環參照至一般 Object，導致 `prepareBody` 的 `JSON.stringify` 崩潰拋出 `Converting circular structure to JSON`。
+
+**影響檔案：**
+- `backend/src/lib/devopsReporter.js`（`maskDeep`, `prepareBody`, `res.json`）
+
+**建議修正：**
+- 在 `maskDeep` 或攔截回應時優先執行 `if (value && typeof value.toJSON === 'function') value = value.toJSON();`。
+- 在 `maskDeep` 參數中引入 `seen = new WeakSet()`，偵測到已走訪物件立即中斷循環並標記 `[Circular]`。
 
 ---
 

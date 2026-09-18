@@ -12,6 +12,8 @@ services:
       - NODE_ENV=production
     volumes:
       - ./backend/uploads:/app/uploads   # 上傳檔案持久化
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'   # DevOps 觀測回報需打得到宿主機的 5132
     restart: unless-stopped
     networks:
       - gigaks-net

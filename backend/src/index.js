@@ -27,6 +27,28 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// ── DevOps 觀測回報（註冊在 body parser 之後、所有路由之前）──
+// 沒設定 DEVOPS_API_KEY 時 SDK 會自動停用，不影響服務啟動
+const { reporter } = require('./lib/devopsReporter');
+app.use(reporter({
+  endpoint:  process.env.DEVOPS_ENDPOINT,
+  apiKey:    process.env.DEVOPS_API_KEY,
+  serviceId: process.env.DEVOPS_SERVICE_ID || 'gigaks-backend',
+  version:   require('../package.json').version,
+  ignorePaths: ['/health', '/uploads'],
+  deps: async () => {
+    const list = [];
+    try {
+      await sequelize.authenticate();
+      list.push({ name: 'mssql-kb', ok: true });
+    } catch {
+      list.push({ name: 'mssql-kb', ok: false });
+    }
+    list.push({ name: 'mongo', ok: mongo.isConfigured() ? await mongo.ping() : true });
+    return list;
+  },
+}));
+
 // ── 靜態檔案（上傳圖片 / 附件）──────────────────────────────
 app.use('/uploads', express.static(path.join(__dirname, '..', process.env.UPLOAD_DIR || 'uploads')));
 
