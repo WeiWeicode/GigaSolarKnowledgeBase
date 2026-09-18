@@ -15,16 +15,21 @@
 | B-12 | 🟡 中 | AI | AI 提示詞與模型配置改為資料庫存取，改寫 aiService.js 從 DB 讀取並整合 Local 快取 | ✅ 已修正 |
 | B-13 | 🔴 高 | AI | vLLM 思考標籤與 API 欄位自適應（增加 ai_tool 欄位及標籤切換） | ✅ 已修正 |
 | B-14 | 🔴 高 | Search | 部門模式搜尋硬性排除 `is_public = true`，導致掛在部門目錄下的公開文章／附件「樹上看得到、搜尋找不到」 | ✅ 已修正 |
-| B-15 | 🔴 高 | DevOps/Perf | devopsReporter 攔截回應時未解構 Sequelize Model，觸發循環參照與深層遞迴卡死 Event Loop 約 3 秒 | ⏳ 待修 |
+| B-15 | 🔴 高 | DevOps/Perf | devopsReporter 攔截回應時未解構 Sequelize Model，觸發循環參照與深層遞迴卡死 Event Loop 約 3 秒 | ✅ 已修正 |
 
 ---
 
 ## 待修項目詳細說明
 
+*（目前暫無進行中的高/中優先度待修項目）*
+
+---
+
+## 已修正項目
+
 ### B-15｜devopsReporter 攔截回應未脫殼，導致循環參照指數級遞迴卡死 Event Loop 約 3 秒
 
-- **狀態**：⏳ 待修（2026-09-18）
-- **完整調查報告**：請參閱 `docs/DevelopmentProcess/DEVOPS_REPORTER_PERFORMANCE_ISSUE.md`
+- **狀態**：✅ 已修正（2026-09-18）
 
 **問題描述：**
 引入 `backend/src/lib/devopsReporter.js`（DevOpsDiagram 觀測 SDK）後，前端頁面載入時偶發出現所有並行 API 請求延遲高達 2.5 ~ 3 秒。後端 Docker log 頻繁輸出：
@@ -44,13 +49,14 @@
 **影響檔案：**
 - `backend/src/lib/devopsReporter.js`（`maskDeep`, `prepareBody`, `res.json`）
 
-**建議修正：**
-- 在 `maskDeep` 或攔截回應時優先執行 `if (value && typeof value.toJSON === 'function') value = value.toJSON();`。
-- 在 `maskDeep` 參數中引入 `seen = new WeakSet()`，偵測到已走訪物件立即中斷循環並標記 `[Circular]`。
+**修正內容（2026-09-18）：**
+在 `backend/src/lib/devopsReporter.js` 的 `maskDeep` 實作三道防護機制：
+1. **優先脫殼（`.toJSON()`）**：判斷物件若具備 `toJSON` 方法（如 Sequelize Model 實例、Date 等），優先轉換為純物件或基本型別，避免直接列舉內部屬性（`dataValues`、`_previousDataValues`）與關聯循環結構。
+2. **循環參照偵測（`WeakSet`）**：在走訪 context 中維護 `seen = new WeakSet()`，偵測到重複物件立即標記為 `'[circular]'` 並中止遞迴。
+3. **節點走訪預算上限（`MAX_NODES = 5000`）**：設置單次處理最大節點數量限制，防止極深或極寬結構無上限消耗 CPU，超過上限直接回傳 `'[truncated: too large]'`。
+4. **安全序列化**：確保 `prepareBody` 與 `safeStringify` 不會拋出未捕捉例外造成程序阻塞或紀錄失敗。
 
 ---
-
-## 已修正項目
 
 ### B-14｜部門模式搜尋找不到公開文章（樹狀圖看得到但搜尋 0 筆）
 
